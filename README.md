@@ -4,7 +4,7 @@
 
 > 面向机器学习与深度学习学习场景的个性化知识讲解与人机复盘 Agent
 
-[![Tests](https://github.com/YitiAnz127/Re_Coach/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re_Coach/actions/workflows/test.yml)
+[![Tests](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **设计版本：** v1.0  
@@ -18,8 +18,8 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/YitiAnz127/Re_Coach.git
-cd Re_Coach
+git clone https://github.com/YitiAnz127/Re-Coach-Agent.git
+cd Re-Coach-Agent
 
 # 一键启动
 docker-compose up -d

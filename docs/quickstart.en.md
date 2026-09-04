@@ -15,8 +15,8 @@ This guide helps you get the Re:Coach project running within 5 minutes.
 ### 1. Clone the project (if you haven't already)
 
 ```bash
-git clone https://github.com/YitiAnz127/Re_Coach.git
-cd Re_Coach
+git clone https://github.com/YitiAnz127/Re-Coach-Agent.git
+cd Re-Coach-Agent
 ```
 
 ### 2. One-command start
@@ -192,5 +192,5 @@ You should see both containers in `healthy` status.
 
 ## Need Help?
 
-- Open a [GitHub Issue](https://github.com/YitiAnz127/Re_Coach/issues)
+- Open a [GitHub Issue](https://github.com/YitiAnz127/Re-Coach-Agent/issues)
 - View the project [README](../README.md)

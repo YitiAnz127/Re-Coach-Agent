@@ -15,8 +15,8 @@
 ### 1. 克隆项目（如果还没有）
 
 ```bash
-git clone https://github.com/YitiAnz127/Re_Coach.git
-cd Re_Coach
+git clone https://github.com/YitiAnz127/Re-Coach-Agent.git
+cd Re-Coach-Agent
 ```
 
 ### 2. 一键启动
@@ -192,5 +192,5 @@ docker-compose ps
 
 ## 需要帮助？
 
-- 提交 [GitHub Issue](https://github.com/YitiAnz127/Re_Coach/issues)
+- 提交 [GitHub Issue](https://github.com/YitiAnz127/Re-Coach-Agent/issues)
 - 查看项目 [README](../README.md)

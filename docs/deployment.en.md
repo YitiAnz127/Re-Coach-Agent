@@ -58,8 +58,8 @@ Visit http://localhost:5173
 
 ```bash
 # Clone the repo
-git clone https://github.com/YitiAnz127/Re_Coach.git
-cd Re_Coach
+git clone https://github.com/YitiAnz127/Re-Coach-Agent.git
+cd Re-Coach-Agent
 
 # One-command start
 docker-compose up -d
@@ -124,7 +124,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 
 ```bash
 cd /opt
-sudo git clone https://github.com/YitiAnz127/Re_Coach.git recoach
+sudo git clone https://github.com/YitiAnz127/Re-Coach-Agent.git recoach
 cd recoach
 ```
 

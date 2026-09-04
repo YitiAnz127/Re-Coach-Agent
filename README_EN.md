@@ -4,7 +4,7 @@
 
 > A personalized knowledge-explanation and retrospection agent for machine learning & deep learning learning scenarios.
 
-[![Tests](https://github.com/YitiAnz127/Re_Coach/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re_Coach/actions/workflows/test.yml)
+[![Tests](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Design version:** v1.0  
@@ -18,8 +18,8 @@
 
 ```bash
 # Clone the repo
-git clone https://github.com/YitiAnz127/Re_Coach.git
-cd Re_Coach
+git clone https://github.com/YitiAnz127/Re-Coach-Agent.git
+cd Re-Coach-Agent
 
 # One-command start
 docker-compose up -d

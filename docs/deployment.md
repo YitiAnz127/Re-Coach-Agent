@@ -58,8 +58,8 @@ npm run dev
 
 ```bash
 # 克隆项目
-git clone https://github.com/YitiAnz127/Re_Coach.git
-cd Re_Coach
+git clone https://github.com/YitiAnz127/Re-Coach-Agent.git
+cd Re-Coach-Agent
 
 # 一键启动
 docker-compose up -d
@@ -124,7 +124,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 
 ```bash
 cd /opt
-sudo git clone https://github.com/YitiAnz127/Re_Coach.git recoach
+sudo git clone https://github.com/YitiAnz127/Re-Coach-Agent.git recoach
 cd recoach
 ```
 
