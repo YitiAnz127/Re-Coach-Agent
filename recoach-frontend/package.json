@@ -1,0 +1,33 @@
+{
+  "name": "recoach-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "check": "tsc --noEmit -p tsconfig.app.json --pretty false && tsc --noEmit -p tsconfig.node.json --pretty false",
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "smoke": "node scripts/e2e-smoke.mjs"
+  },
+  "dependencies": {
+    "katex": "^0.18.4",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/katex": "^0.16.8",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "latest",
+    "rehype-stringify": "^10.0.1",
+    "remark-rehype": "^11.1.2",
+    "typescript": "^5.9.2",
+    "vite": "latest"
+  }
+}

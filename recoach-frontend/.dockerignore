@@ -1,0 +1,28 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm/
+
+# 构建产物
+dist/
+build/
+
+# 测试
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# 其他
+.env
+*.md
+tests/

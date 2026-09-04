@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./recoach-server
+      dockerfile: Dockerfile
+    container_name: recoach-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # 基础配置
+      - RECOACH_DB_PATH=/app/data/recoach.db
+      - RECOACH_DEV_USER=demo_user
+      - RECOACH_CORS_ORIGINS=http://localhost:4173,http://127.0.0.1:4173
+      
+      # LLM配置 - 默认使用模板模式（无需API key）
+      - RECOACH_LLM_PROVIDER=template
+      
+      # 如果要使用真实LLM，取消注释并配置以下选项之一：
+      
+      # DeepSeek配置
+      # - RECOACH_LLM_PROVIDER=deepseek
+      # - RECOACH_DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      # - RECOACH_DEEPSEEK_MODEL=deepseek-v4-flash
+      
+      # Anthropic配置
+      # - RECOACH_LLM_PROVIDER=anthropic
+      # - RECOACH_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # - RECOACH_ANTHROPIC_MODEL=claude-opus-5
+      
+      # OpenAI兼容配置
+      # - RECOACH_LLM_PROVIDER=openai_compatible
+      # - RECOACH_LLM_BASE_URL=https://api.openai.com/v1
+      # - RECOACH_LLM_API_KEY=${OPENAI_API_KEY}
+      # - RECOACH_LLM_MODEL=gpt-4
+      
+      # 记忆配置
+      - RECOACH_MEMORY_ON=true
+      - RECOACH_MEMORY_MAX_SELECTED=3
+      
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./recoach-frontend
+      dockerfile: Dockerfile
+    container_name: recoach-frontend
+    ports:
+      - "4173:4173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+      - VITE_DEMO_MODE=false
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4173/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  data:
+    driver: local
+
+networks:
+  default:
+    name: recoach-network
