@@ -32,6 +32,9 @@ FRONTEND = ROOT / "recoach-frontend"
 # TUI 是本仓库的**同级目录**（独立仓库）。缺失时跳过相关检查，
 # 不能因为别人只 clone 了这个仓库就报错。
 TUI = ROOT.parent / "re-coach-tui"
+if not TUI.exists():
+    # 发布仓库把 TUI 作为顶层子项目携带；本地开发仍兼容同级独立目录。
+    TUI = ROOT / "re-coach-tui"
 
 issues: list[tuple[str, str]] = []
 notes: list[str] = []
