@@ -2,7 +2,7 @@
 
 > 知返 Re: Coach 的终端(TUI)版本 —— 面向机器学习/深度学习的个性化学习教练。
 
-参照 `arex test / arex skill` 的 TUI 形态，用 `@earendil-works/pi-tui` 构建。**独立应用**：不依赖 `recoach-server` 后端，澄清门控、作用域记忆、确定性上下文编译器、LLM 流式输出全部在本进程内用 TypeScript 实现（与后端逻辑 1:1 对齐）。
+用 `@earendil-works/pi-tui` 构建。**独立应用**：不依赖 `recoach-server` 后端，澄清门控、作用域记忆、确定性上下文编译器、LLM 流式输出全部在本进程内用 TypeScript 实现（与后端逻辑 1:1 对齐）。
 
 ## 功能
 
