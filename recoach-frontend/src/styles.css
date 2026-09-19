@@ -73,6 +73,11 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, summary:focu
 .brand span { display: grid; text-align: left; line-height: 1.05; }
 .brand strong { font-size: 19px; letter-spacing: -.02em; }
 .brand small { margin-top: 5px; color: var(--muted); font-size: 13px; letter-spacing: .04em; }
+/* 顶栏常驻的"当前模型"指示器：让用户随时知道在和模型还是模板对话 */
+.model-badge { grid-column: 7 / span 6; justify-self: end; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.model-badge em { font-style: normal; opacity: .75; }
+.model-badge-warn { color: #805400; background: #fff0c7; border-color: rgba(128,84,0,.18); }
+.model-badge-loading { opacity: .6; }
 
 .main-grid { min-height: calc(100vh - 72px); padding-block: var(--s8) var(--s6); align-items: start; }
 .side-nav { grid-column: 1 / span 2; position: sticky; top: calc(72px + var(--s8)); display: flex; flex-direction: column; gap: var(--s6); }
@@ -398,6 +403,7 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, summary:focu
     }
   }
   .service-model .fallback-label { color: #ffdda0; background: rgba(151,95,15,.3); border-color: rgba(255,205,112,.34); }
+  .model-badge-warn { color: #ffdda0; background: rgba(151,95,15,.3); border-color: rgba(255,205,112,.34); }
   .assistant-copy code:not(pre code) { background: rgba(255,255,255,.08); }
   .fair-fork-lock-state { color: #c3bff0; }
   .fork-launcher textarea { background: #202024; border-color: rgba(255,255,255,.15); }

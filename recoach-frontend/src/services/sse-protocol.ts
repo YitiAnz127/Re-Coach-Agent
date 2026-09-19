@@ -196,6 +196,14 @@ function isTerminal(event: AgentStreamEvent) {
   return event.type === "turn.completed" || event.type === "turn.error";
 }
 
+/**
+ * 未闭合帧的缓冲上限（字符数）。
+ *
+ * 服务端（或中间代理）若持续发送不含空行的数据，buffer 会无界增长，
+ * 最终打爆浏览器内存。正常事件远小于这个上限，触到即为异常流。
+ */
+const MAX_PENDING_FRAME_CHARS = 1_000_000;
+
 export class SseProtocolDecoder {
   private buffer = "";
   private terminalSeen = false;
@@ -205,6 +213,13 @@ export class SseProtocolDecoder {
     this.buffer += chunk;
     const frames = this.buffer.split(/\r?\n\r?\n/);
     this.buffer = frames.pop() ?? "";
+    if (this.buffer.length > MAX_PENDING_FRAME_CHARS) {
+      this.buffer = "";
+      throw new SseProtocolError(
+        "服务端事件帧超过大小上限，已中止读取。",
+        "FRAME_TOO_LARGE",
+      );
+    }
     return frames.flatMap((frame) => this.consumeFrame(frame));
   }
 

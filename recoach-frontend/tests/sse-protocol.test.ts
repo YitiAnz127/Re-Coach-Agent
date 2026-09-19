@@ -56,3 +56,25 @@ test("preserves requestId on structured SSE errors", () => {
     assert.equal(events[0].requestId, "req_1");
   }
 });
+
+test("rejects a frame that never terminates instead of buffering forever", () => {
+  // 恶意/异常服务端可以持续发送不含空行的数据；没有上限会打爆浏览器内存。
+  const decoder = new SseProtocolDecoder();
+  const huge = "x".repeat(600_000);
+  assert.throws(
+    () => {
+      for (let i = 0; i < 3; i++) decoder.push(huge);
+    },
+    (error: unknown) => error instanceof SseProtocolError && error.code === "FRAME_TOO_LARGE",
+  );
+});
+
+test("large but properly terminated frames still decode", () => {
+  const decoder = new SseProtocolDecoder();
+  const bigDelta = "中".repeat(50_000);
+  const events = decoder.push(
+    `data: {"type":"assistant.delta","turnId":"turn_1","delta":"${bigDelta}"}\n\n`,
+  );
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.type, "assistant.delta");
+});

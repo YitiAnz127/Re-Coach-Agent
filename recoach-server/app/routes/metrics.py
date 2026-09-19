@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from ..errors import error_payload
 
 from ..services.metrics import summarize
-from .sessions import current_user_id, owned_session
+from .sessions import current_user_id_or_error, owned_session
 
 router = APIRouter()
 
@@ -15,4 +15,7 @@ router = APIRouter()
 def metrics_summary(request: Request, sessionId: str | None = None):
     if sessionId is not None and owned_session(request, sessionId) is None:
         return JSONResponse(status_code=404, content={"error": error_payload("SESSION_NOT_FOUND")})
-    return {"data": summarize(user_id=current_user_id(request), session_id=sessionId)}
+    user_id, error = current_user_id_or_error(request)
+    if error is not None:
+        return error
+    return {"data": summarize(user_id=user_id, session_id=sessionId)}

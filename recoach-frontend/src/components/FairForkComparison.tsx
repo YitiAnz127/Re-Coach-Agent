@@ -209,6 +209,7 @@ export function FairForkComparison({
         clientTurnId: `client_fork_${mode}_${crypto.randomUUID()}`,
         signal,
       })) {
+        if (signal.aborted) return;
         if (event.type === "turn.started") {
           patchBranch(mode, { focus: event.focus });
         } else if (event.type === "assistant.thinking") {
@@ -238,6 +239,7 @@ export function FairForkComparison({
         }
       }
     } catch (error) {
+      if (signal.aborted) throw error;
       if (error instanceof DOMException && error.name === "AbortError") throw error;
       patchBranch(mode, {
         status: "error",
@@ -250,9 +252,8 @@ export function FairForkComparison({
 
   async function runFairFork() {
     const content = question.trim();
-    if (!canRun || !sourceSessionId || !content) return;
+    if (!canRun || !sourceSessionId || !content || controllerRef.current) return;
 
-    controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
     setRunState("forking");
@@ -281,6 +282,7 @@ export function FairForkComparison({
       const failures = results.filter((result) => result.status === "rejected").length;
       setRunState(failures === 0 ? "complete" : failures === results.length ? "error" : "partial");
     } catch (error) {
+      if (controller.signal.aborted) return;
       if (error instanceof DOMException && error.name === "AbortError") return;
       setRequestError(safeErrorMessage(error));
       setRunState("error");

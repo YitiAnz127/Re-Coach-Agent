@@ -28,25 +28,53 @@ def get_session(session_id: str) -> tuple[str, SessionBrief, int] | None:
     return row["user_id"], SessionBrief.model_validate_json(row["brief_json"]), row["version"]
 
 
+def _write_brief(
+    session_id: str, brief: SessionBrief, expected_version: int | None
+) -> tuple[int, bool]:
+    """写入 Brief，返回 (当前版本, 是否真的写入了)。
+
+    CAS 冲突时 UPDATE 匹配 0 行，此时返回的版本号**可能是** expected_version+1
+    （恰好被并发轮次推进一格），所以单看版本号无法判断成功与否，必须依赖 rowcount。
+    """
+    with db.tx() as conn:
+        if expected_version is None:
+            cursor = conn.execute(
+                "UPDATE sessions SET brief_json=?, version=version+1, updated_at=? WHERE id=?",
+                (brief.model_dump_json(), now_iso(), session_id),
+            )
+        else:
+            cursor = conn.execute(
+                "UPDATE sessions SET brief_json=?, version=version+1, updated_at=? WHERE id=? AND version=?",
+                (brief.model_dump_json(), now_iso(), session_id, expected_version),
+            )
+        applied = cursor.rowcount > 0
+    row = db.query_one("SELECT version FROM sessions WHERE id=?", (session_id,))
+    return (row["version"] if row else 0), applied
+
+
 def update_brief(session_id: str, brief: SessionBrief, expected_version: int | None = None) -> int:
     """确定性合并结果整体落库，版本号 +1。
 
     传入 expected_version 时做乐观锁（CAS）：会话版本已被他人推进则放弃写入，
     防止并发轮次基于旧 Brief 覆盖新状态。失败时调用方仍持有旧版本。
+
+    返回值是写入后的版本号。**注意**：它不表示写入成功——需要区分时用
+    `update_brief_checked`。
     """
-    with db.tx() as conn:
-        if expected_version is None:
-            conn.execute(
-                "UPDATE sessions SET brief_json=?, version=version+1, updated_at=? WHERE id=?",
-                (brief.model_dump_json(), now_iso(), session_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE sessions SET brief_json=?, version=version+1, updated_at=? WHERE id=? AND version=?",
-                (brief.model_dump_json(), now_iso(), session_id, expected_version),
-            )
-    row = db.query_one("SELECT version FROM sessions WHERE id=?", (session_id,))
-    return row["version"] if row else 0
+    version, _applied = _write_brief(session_id, brief, expected_version)
+    return version
+
+
+def update_brief_checked(
+    session_id: str, brief: SessionBrief, expected_version: int | None = None
+) -> tuple[int, bool]:
+    """同 update_brief，但额外返回是否真的写入成功。
+
+    并发下 CAS 失败的轮次其 delta（如 clarify_streak 递增、精确锚点）会被丢弃，
+    调用方据此记事件而不是假装已更新——澄清门控依赖 clarify_streak，
+    静默丢失会让本该被门控的请求直接拿到完整讲解。
+    """
+    return _write_brief(session_id, brief, expected_version)
 
 
 def apply_turn_delta(
@@ -298,6 +326,17 @@ def _write_session_fork(
             json.dumps(memory_snapshot, ensure_ascii=False),
             json.dumps(concept_snapshot, ensure_ascii=False),
         ),
+    )
+    # Freeze full records in the same transaction as both branch baselines.
+    memories = [dict(row) for row in conn.execute(
+        "SELECT * FROM memories WHERE user_id=? AND status='active' ORDER BY id", (user_id,)
+    )]
+    concepts = [dict(row) for row in conn.execute(
+        "SELECT * FROM concept_states WHERE user_id=? ORDER BY id", (user_id,)
+    )]
+    conn.execute(
+        "UPDATE session_forks SET memory_content_json=?, concept_content_json=? WHERE session_id=?",
+        (json.dumps(memories, ensure_ascii=False), json.dumps(concepts, ensure_ascii=False), session_id),
     )
 
 

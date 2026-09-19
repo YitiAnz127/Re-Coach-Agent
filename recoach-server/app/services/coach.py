@@ -12,14 +12,31 @@ from ..config import get_settings
 from ..schemas import ResolvedTask
 
 
+class ProviderFailure(RuntimeError):
+    """真实 provider 失败，且调用方选择了 fail-fast（不降级为模板）。
+
+    只携带粗粒度原因类别，异常原文不外传——原文可能含请求 URL、响应体片段。
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 @dataclass
 class CoachMeta:
     provider: str = "template"
     model: str = "template"
+    # 真实 provider 失败并降级成模板时，记录**原本想用的** provider/model，
+    # 否则降级后 provider 被改成 "template"，外部再也看不出本该怎么走。
+    requested_provider: str = ""
+    requested_model: str = ""
     ttft_ms: int = 0
     thinking_ttft_ms: int = 0
     content_ttft_ms: int = 0  # 新增：正文首字时间
     fallback: bool = False
+    # 降级的粗粒度原因，只暴露异常**类别**而非异常文本，避免带出 URL / 响应体等细节
+    fallback_reason: str = ""
     truncated: bool = False
     continuation_count: int = 0
     thinking_tokens: int = 0
@@ -263,6 +280,7 @@ async def stream_explanation(*, system: str, user: str, task: ResolvedTask, appl
     """主 Coach 流式输出；检测截断后最多有限次数续写。"""
     provider, model = resolve_provider()
     meta.provider, meta.model = provider, model
+    meta.requested_provider, meta.requested_model = provider, model
     if provider == "template":
         meta.ttft_ms = 1
         for chunk in _split_chunks(_template_text(task, applied_labels)):
@@ -309,14 +327,42 @@ async def stream_explanation(*, system: str, user: str, task: ResolvedTask, appl
                 )
         if meta.truncated and meta.continuation_count < max_continuations and not produced_any:
             return
-    except Exception:
+    except Exception as exc:
+        # 已经吐出部分内容就如实报错；一个字都还没出，才考虑降级。
         if produced_any:
             raise
+        reason = _classify_provider_failure(exc)
+        if get_settings().llm_fail_fast:
+            # 明确选择"失败即报错"：不降级，把问题直接暴露出来。
+            raise ProviderFailure(reason) from exc
         meta.fallback = True
+        meta.fallback_reason = reason
         meta.provider, meta.model = "template", "template"
         meta.ttft_ms = 1
         for chunk in _split_chunks(_template_text(task, applied_labels)):
             yield ("content", chunk)
+
+
+def _classify_provider_failure(exc: BaseException) -> str:
+    """把 provider 失败归到一个粗粒度类别，供 UI 提示与排查。
+
+    刻意只返回类别字符串：异常原文可能含请求 URL、响应体片段甚至密钥（若
+    调用方把 key 拼进了 URL），绝不能外流到客户端或事件表。
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code if exc.response is not None else 0
+        if status in (401, 403):
+            return "AUTH"
+        if status == 429:
+            return "QUOTA"
+        if status >= 500:
+            return "PROVIDER_ERROR"
+        return "HTTP_ERROR"
+    if isinstance(exc, (httpx.TimeoutException,)):
+        return "TIMEOUT"
+    if isinstance(exc, httpx.TransportError):
+        return "NETWORK"
+    return "ERROR"
 
 
 def _split_chunks(text: str) -> list[str]:

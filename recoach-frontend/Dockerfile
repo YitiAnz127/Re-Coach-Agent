@@ -1,37 +1,17 @@
-FROM node:20-alpine AS builder
-
+FROM node:22-alpine AS builder
 WORKDIR /app
-
-# 复制依赖文件
 COPY package*.json ./
-
-# 安装依赖
 RUN npm ci
-
-# 复制源代码
 COPY . .
-
-# 构建应用
+ARG VITE_API_BASE_URL=/api/v1
+ARG VITE_DEMO_MODE=false
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ENV VITE_DEMO_MODE=$VITE_DEMO_MODE
 RUN npm run build
 
-# 生产环境镜像
-FROM node:20-alpine
-
-WORKDIR /app
-
-# 复制构建产物
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package*.json ./
-
-# 安装生产依赖
-RUN npm ci --production
-
-# 暴露端口
+FROM nginx:stable-alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 4173
-
-# 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:4173/ || exit 1
-
-# 启动应用
-CMD ["npm", "run", "preview"]
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:4173/ || exit 1

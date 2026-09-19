@@ -28,6 +28,15 @@ def meta():
                 "provider": provider,
                 "model": model,
                 "configured": provider != "template",
+                # 只暴露"某 provider 是否配了密钥"的布尔值，绝不暴露密钥内容。
+                # 用途：provider 仍是 template 但密钥已填时，客户端可提示
+                # "你填了密钥但没切换 provider"——这是最常见的配置失误，
+                # 且不提示的话应用会一直安静地走模板。
+                "keysPresent": {
+                    "deepseek": bool(settings.effective_deepseek_key),
+                    "anthropic": bool(settings.effective_anthropic_key),
+                    "openaiCompatible": bool(settings.llm_api_key and settings.llm_base_url),
+                },
                 "thinkingEnabled": thinking_enabled,
                 "reasoningEffort": (
                     settings.deepseek_reasoning_effort if thinking_enabled else None

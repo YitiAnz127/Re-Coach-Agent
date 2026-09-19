@@ -1,0 +1,33 @@
+{
+  "name": "recoach-tui",
+  "version": "0.1.0",
+  "description": "知返 Re: Coach - 个性化 ML/DL 学习讲解 Agent 的终端(TUI)版本",
+  "type": "module",
+  "bin": {
+    "recoach": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/cli.js",
+    "dev": "npm run build && node dist/cli.js",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "0.85.1",
+    "chalk": "5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

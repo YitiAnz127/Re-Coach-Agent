@@ -22,6 +22,13 @@ export interface PerformanceMetrics {
   contextCompileMs: number;
   memoryCapsuleTokens: number;
   totalInputTokens: number;
+  /** 本轮**实际**使用的 provider。真实模型失败降级时会是 "template"。 */
+  provider?: string;
+  model?: string;
+  /** 本轮是否发生了模板降级（配置值与实际值不一致时以本字段为准）。 */
+  fallback?: boolean;
+  /** 降级的粗粒度原因：AUTH / QUOTA / TIMEOUT / NETWORK / PROVIDER_ERROR / ... */
+  fallbackReason?: string;
 }
 
 export interface ExperimentPoint {

@@ -1,5 +1,5 @@
 import { getDemoReply } from "../data/demo";
-import type { AgentStreamEvent } from "../types";
+import type { AgentStreamEvent, TurnPresentation } from "../types";
 import {
   demoServiceMeta,
   parseServiceMeta,
@@ -33,15 +33,19 @@ export class AgentApiError extends Error {
 
 function wait(ms: number, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
-    const timer = window.setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        window.clearTimeout(timer);
-        reject(new DOMException("Aborted", "AbortError"));
-      },
-      { once: true },
-    );
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -128,7 +132,11 @@ export async function* parseSseResponse(
     }
     throw error;
   } finally {
-    reader.releaseLock();
+    try {
+      await reader.cancel();
+    } finally {
+      reader.releaseLock();
+    }
   }
 }
 
@@ -176,6 +184,56 @@ export async function createSession(signal?: AbortSignal): Promise<string> {
   }
 
   return payload.data.sessionId;
+}
+
+/** 历史会话里的一轮，形状与服务端 GET /sessions/{id}/turns 对齐。 */
+export interface RestoredTurn {
+  turnId: string;
+  /** 用户**原始**输入（编号选择不会被替换成长文本），用于如实还原对话。 */
+  userText: string;
+  assistantText: string;
+  presentation: TurnPresentation;
+  createdAt?: string;
+}
+
+/** 恢复会话历史。返回可直接渲染的轮次；会话不存在时抛 404 错误由调用方处理。 */
+export async function fetchSessionTurns(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<RestoredTurn[]> {
+  const response = await fetch(
+    `${apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/turns`,
+    { headers: { Accept: "application/json" }, signal },
+  );
+  if (!response.ok) {
+    const error = await errorFromResponse(
+      response,
+      "无法读取历史会话。",
+      "SESSION_RESTORE_FAILED",
+    );
+    throw error;
+  }
+  const payload = (await response.json()) as {
+    data?: { turns?: unknown };
+  };
+  const turns = payload.data?.turns;
+  if (!Array.isArray(turns)) {
+    throw new AgentApiError("历史会话数据格式不正确。", "INVALID_SESSION_RESPONSE", false);
+  }
+  // 逐条校验形状：后端版本不一致时宁可少渲染，也不要让坏数据进入 React state
+  return turns.filter(isRestoredTurn) as RestoredTurn[];
+}
+
+function isRestoredTurn(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const t = value as Record<string, unknown>;
+  return (
+    typeof t.turnId === "string" &&
+    typeof t.userText === "string" &&
+    typeof t.assistantText === "string" &&
+    typeof t.presentation === "object" &&
+    t.presentation !== null
+  );
 }
 
 export async function* streamTurn(input: SendTurnInput): AsyncGenerator<AgentStreamEvent> {

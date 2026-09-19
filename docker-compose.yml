@@ -1,47 +1,54 @@
-version: '3.8'
-
 services:
   backend:
     build:
       context: ./recoach-server
       dockerfile: Dockerfile
     container_name: recoach-backend
+    # 只绑定回环：后端不直接对外，所有流量经 frontend(nginx) 转发。
+    # 这同时保证"未配令牌 = 仅本机可访问"的开发模式不会被公网绕过。
+    #
+    # 宿主端口可配置：Windows 上 8000 常被 Hyper-V/WSL 保留
+    # （netsh interface ipv4 show excludedportrange protocol=tcp 查看），
+    # 被保留时绑定会以 WinError 10013 失败。此时设环境变量换端口即可：
+    #   RECOACH_BACKEND_PORT=8100 docker-compose up -d
+    # 容器内部始终监听 8000，这里只影响宿主侧映射。
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${RECOACH_BACKEND_PORT:-8000}:8000"
+    # 这里**只放容器环境特有的部署值**。
+    #
+    # 重要：compose 的 environment 优先级高于 env_file。任何应用配置
+    # （模型、限流、记忆开关等）都不要写在这里——写了就会静默覆盖
+    # recoach-server/.env 里用户自己的设置，出现"改了 .env 却不生效"。
+    # 应用配置统一由下方 env_file 提供，缺省值由 app/config.py 决定。
     environment:
-      # 基础配置
+      # 数据库在容器内的绝对路径（与宿主 ./data 挂载对应，必须覆盖）
       - RECOACH_DB_PATH=/app/data/recoach.db
-      - RECOACH_DEV_USER=demo_user
-      - RECOACH_CORS_ORIGINS=http://localhost:4173,http://127.0.0.1:4173
-      
-      # LLM配置 - 默认使用模板模式（无需API key）
-      - RECOACH_LLM_PROVIDER=template
-      
-      # 如果要使用真实LLM，取消注释并配置以下选项之一：
-      
-      # DeepSeek配置
-      # - RECOACH_LLM_PROVIDER=deepseek
-      # - RECOACH_DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-      # - RECOACH_DEEPSEEK_MODEL=deepseek-v4-flash
-      
-      # Anthropic配置
-      # - RECOACH_LLM_PROVIDER=anthropic
-      # - RECOACH_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      # - RECOACH_ANTHROPIC_MODEL=claude-opus-5
-      
-      # OpenAI兼容配置
-      # - RECOACH_LLM_PROVIDER=openai_compatible
-      # - RECOACH_LLM_BASE_URL=https://api.openai.com/v1
-      # - RECOACH_LLM_API_KEY=${OPENAI_API_KEY}
-      # - RECOACH_LLM_MODEL=gpt-4
-      
-      # 记忆配置
-      - RECOACH_MEMORY_ON=true
-      - RECOACH_MEMORY_MAX_SELECTED=3
-      
+
+      # 访问令牌：留空 = 开发模式（仅本机回环 + 可信网段可用）。
+      # 对外部署必须设置，生成方式：
+      #   python -c "import secrets;print(secrets.token_urlsafe(32))"
+      - RECOACH_API_TOKEN=${RECOACH_API_TOKEN:-}
+
+      # nginx 反代 /api 时，后端看到的来源是 nginx 容器内网 IP，不属于回环。
+      # 不声明这一项，默认部署下前端每个 API 调用都会 401。
+      # 该网段在文件底部 networks 里固定为 172.28.0.0/24，与本行必须保持一致。
+      - RECOACH_TRUSTED_HOSTS=${RECOACH_TRUSTED_HOSTS:-172.28.0.0/24}
+
+    # 直接复用本地开发用的那份配置（含 API 密钥与模型选择），
+    # 这样"本机能跑通"和"容器里能跑通"用的是同一套参数。
+    # 缺失时不报错（新 clone 的仓库没有 .env，此时走上面的默认值）。
+    # 注意：上面的 environment 优先级高于 env_file，DB 路径等由 environment 决定。
+    env_file:
+      - path: ./recoach-server/.env
+        required: false
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    # 资源上限：单轮 LLM continuation 循环异常时不会拖垮宿主机
+    mem_limit: 1g
+    cpus: 2.0
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -53,18 +60,27 @@ services:
     build:
       context: ./recoach-frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1
+        VITE_DEMO_MODE: "false"
     container_name: recoach-frontend
+    # 唯一对外入口，且只绑回环：本地自用时同局域网的其他机器访问不到。
+    # 注意不要改回 "4173:4173"（那会绑定 0.0.0.0）——nginx 会剥掉 x-user-id 并
+    # 以可信网段身份转发，等于把整个应用的访问权开放给整个局域网。
     ports:
-      - "4173:4173"
-    environment:
-      - VITE_API_BASE_URL=http://localhost:8000/api/v1
-      - VITE_DEMO_MODE=false
+      - "127.0.0.1:4173:4173"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4173/"]
+      # 必须用 127.0.0.1，不能用 localhost：
+      # 容器内 localhost 会优先解析为 IPv6 ::1，而 nginx 只监听 IPv4，
+      # 导致探活永远失败、容器恒为 unhealthy（服务本身其实是好的）。
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4173/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -77,3 +93,8 @@ volumes:
 networks:
   default:
     name: recoach-network
+    # 固定网段：RECOACH_TRUSTED_HOSTS 需要引用它，动态分配会让两者失配。
+    # 若与宿主机已有网络冲突，改这里的同时必须改上面 backend 的默认值。
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

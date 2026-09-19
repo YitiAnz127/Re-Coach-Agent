@@ -87,9 +87,12 @@ def test_specific_question_skips_clarification(client):
     assert "反向传播" in body
     presentation = events[-1]["presentation"]
     assert presentation["mode"] == "explain"
+    # provider/model/fallback/fallbackReason 是本轮实际运行信息：
+    # 客户端必须能据此判断是否发生模板降级，不能只依赖 /meta 的配置值。
     assert set(presentation["metrics"]) == {
         "timeToFirstTokenMs", "memorySearchMs", "contextCompileMs",
         "memoryCapsuleTokens", "totalInputTokens",
+        "provider", "model", "fallback", "fallbackReason",
     }
 
 

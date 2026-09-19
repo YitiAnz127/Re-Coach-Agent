@@ -93,12 +93,25 @@ npm run dev
 ## 🧪 测试
 
 ```bash
-# 后端测试 (81个)
+# 后端测试
 cd recoach-server && pytest
 
-# 前端测试 (11个)
+# 前端测试
 cd recoach-frontend && npm test
 ```
+
+### 跨文件一致性审计
+
+改完配置项或接口字段后跑一遍，能发现单看某个文件看不出来的问题
+（配置项加了却忘了写进 `.env.example`、后端加了字段却忘了同步前端类型、
+代码里残留调试输出等）：
+
+```bash
+python tools/consistency_audit.py
+```
+
+退出码 0 表示全部通过，可直接接入 CI。脚本会自行定位仓库位置，
+在任意目录下运行都可以；同级目录若存在 TUI 仓库，会一并检查它的问题。
 
 ---
 

@@ -1,0 +1,27 @@
+# ---- 构建产物 ----
+node_modules/
+dist/
+*.tsbuildinfo
+
+# ---- 安装日志（npm 出错时可能夹带私服 token）----
+*.log
+install.log
+npm.err.log
+npm.out.log
+
+# ---- 本地数据：含完整对话历史与学习偏好 ----
+.recoach/
+store.json
+*.tmp
+
+# ---- 机密 ----
+.env
+.env.*
+!.env.example
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

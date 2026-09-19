@@ -48,7 +48,7 @@ npm install
 npm run dev
 ```
 
-访问 http://localhost:5173
+访问 http://localhost:4173
 
 ---
 
@@ -268,6 +268,11 @@ Type=simple
 User=www-data
 WorkingDirectory=/opt/recoach/recoach-server
 Environment="PATH=/opt/recoach/venv/bin"
+# 对外部署必须同时设置 RECOACH_API_TOKEN，否则本服务完全没有访问控制。
+# 注意 --host 0.0.0.0 会让后端直接监听所有网卡：若前面还有 nginx，
+# 后端端口不应对外开放（用防火墙只放行前端端口），否则可绕过 nginx 的身份头剥离。
+# 若确实需要直接访问后端，请设为 127.0.0.1（仅本机）并让 nginx 反代。
+Environment="RECOACH_API_TOKEN=<在此填入你的令牌>"
 ExecStart=/opt/recoach/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=3
@@ -471,13 +476,148 @@ services:
 
 ## 安全建议
 
+### 两个 .env 的分工（容易搞混）
+
+仓库里有两个 `.env`，**职责不同，不要合并**（两个都已被 `.gitignore` 忽略）：
+
+| 文件 | 谁读它 | 放什么 |
+|---|---|---|
+| `./.env`（仓库根） | `docker compose` 做变量替换 | 部署参数，如 `RECOACH_BACKEND_PORT` |
+| `./recoach-server/.env` | 应用自身（也被 compose 的 `env_file` 注入容器） | 模型、密钥、限流、鉴权等应用配置 |
+
+判断标准很简单：**"容器里跑的那个进程会读它吗？"**
+会 → `recoach-server/.env`；只是给 compose 拼命令行用的 → 根目录 `.env`。
+
+把应用配置写进根 `.env` 不会生效；把端口写成 `recoach-server/.env` 也不会被 compose 读到。
+
+### 访问控制（必读）
+
+Re:Coach 的身份由 `x-user-id` 请求头表达。该头**只在调用方通过鉴权之后才可信**，
+鉴权由 `RECOACH_API_TOKEN` 承担：
+
+| `RECOACH_API_TOKEN` | 行为 |
+|---|---|
+| 留空（默认） | **开发模式**：`/api/v1` 只接受本机回环客户端，其他来源一律 `401` |
+| 已设置 | **令牌模式**：所有 `/api/v1` 请求必须带 `Authorization: Bearer <token>` |
+
+生成令牌：
+
+```bash
+python -c "import secrets;print(secrets.token_urlsafe(32))"
+```
+
+令牌模式面向直接调用 API 的可信客户端。当前浏览器界面没有登录页，也不会读取、
+保存或自动附加 `RECOACH_API_TOKEN`；因此只在后端设置令牌，会让浏览器请求全部返回
+`401`。不要把令牌写入 `VITE_*` 或前端镜像，那会把共享密钥公开在浏览器产物中。
+
+对外提供 Web 界面时，必须在外层反向代理接入登录，并由代理在服务端侧注入 Bearer
+令牌与可信用户身份；同时保持后端端口不可从公网直接访问。没有这层身份代理时，
+只能维持下文的回环地址本地部署。
+
+### 信任边界的真实含义
+
+令牌是**单一共享密钥**，它解决的是"谁能访问这个实例"，**不解决"用户之间互相隔离"**：
+
+- 持有令牌的调用方仍然可以自行设置 `x-user-id: <任意值>`，读写该身份下的数据。
+- 因此当前模型适用于**单用户自用**或**全部使用者互相信任**的场景。
+- 若要面向互不信任的多用户，需要在反向代理层接入真实登录（OIDC / 自建账号），
+  把 `user_id` 从"请求头"改为"服务端根据会话推导"，并给每个用户独立凭证。
+  改动点在 `recoach-server/app/auth.py` 与 `app/routes/sessions.py:current_user_id`。
+
+`/docs` 与 `/openapi.json` 在令牌模式下默认关闭；需要时显式设
+`RECOACH_EXPOSE_DOCS=true`。
+
+### 本地自用（单用户）部署要点
+
+本项目当前定位是**单用户本地自用**。这个定位下靠"只绑回环"就够了，不必配令牌：
+
+```yaml
+# docker-compose.yml
+frontend:
+  ports:
+    - "127.0.0.1:4173:4173"   # 唯一入口，只绑回环
+backend:
+  ports:
+    - "127.0.0.1:8000:8000"   # 不直接对外
+  environment:
+    - RECOACH_API_TOKEN=      # 留空 = 开发模式
+    - RECOACH_TRUSTED_HOSTS=172.28.0.0/24
+```
+
+**`RECOACH_TRUSTED_HOSTS` 是本地自用的关键一项。** 前端 nginx 反代 `/api` 时，
+后端看到的来源是 nginx 容器的内网 IP（`172.28.0.x`），不属于回环；
+只认回环会让每个 API 调用都返回 `401`。所以 compose 固定了网段
+`172.28.0.0/24` 并在后端显式声明它，两边必须一致。
+
+> 这两条是**一对**：只绑回环 → 局域网进不来；声明可信网段 → 容器间反代能通。
+> 改任意一条都要同时看另一条。
+
+不要只把入口改成 `0.0.0.0:4173` 并设置 `RECOACH_API_TOKEN`：内置 Web 客户端不会发送
+该令牌，结果只会是全部 API 请求 `401`。对外监听前应先配置带登录的外层反向代理，
+由它在服务端侧注入 Bearer 令牌；否则局域网内任何人都能访问完整应用。
+
+#### 后端端口 8000 起不来（Windows 常见）
+
+Windows 会把一批端口段保留给 Hyper-V / WSL，落在这个范围内的端口**绑不上**，
+报错形如 `[WinError 10013] 以一种访问权限不允许的方式做了一个访问套接字的尝试`。
+8000 在很多机器上恰好在保留段里（例如 7998–8097）。
+
+先确认：
+
+```powershell
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+
+如果 8000 在列表中，换一个宿主端口即可（容器内部仍监听 8000）：
+
+```bash
+RECOACH_BACKEND_PORT=8100 docker-compose up -d
+```
+
+或者用管理员权限永久释放该段（会重启 winnat，需谨慎）：
+
+```powershell
+net stop winnat
+netsh int ipv4 add excludedportrange protocol=tcp startport=8000 numberofports=1
+net start winnat
+```
+
+注意：这只影响宿主侧端口映射。前端入口 4173 通常不受影响，
+所以**即使不改，`http://localhost:4173` 依然可以用**——8000 只在需要直接访问
+后端 API（如 `/docs`）时才需要。
+
+### 限流与资源上限
+
+- `RECOACH_RATE_LIMIT_PER_MINUTE`（默认 30）：每身份每分钟的计费型请求数上限。
+  仅作用于会真实调用 LLM 的端点；完成态重放与 409 冲突不消耗配额。
+  超限返回 `429`。
+- `RECOACH_MAX_CONCURRENT_TURNS`（默认 16）：同时进行中的流式 Turn 上限。
+  超限返回 `503 SERVICE_BUSY`。挡住"开大量 SSE 不读响应"的资源耗尽。
+- `RECOACH_MAX_BODY_BYTES`（默认 65536）：请求体大小上限，超限返回 `413`。
+- 以上计数都在进程内存中，**多副本部署时每个副本各算一份**。需要严格全局配额
+  时应换成 Redis 等共享后端。
+
+### 其他
+
 1. **使用HTTPS** - 生产环境必须使用SSL证书
 2. **保护API密钥** - 使用环境变量或密钥管理服务
-3. **限制CORS** - 只允许可信域名
+3. **限制CORS** - 只允许可信域名；设成 `*` 时服务端会自动关闭 `allow_credentials`
 4. **定期备份** - 设置自动备份任务
-5. **更新依赖** - 定期更新Docker镜像和依赖包
+5. **更新依赖** - 后端镜像从 `requirements.lock.txt` 安装以保证可复现。**改依赖后必须重新生成锁文件**，且必须用与镜像相同版本的 Python 解析：
+
+   ```bash
+   cd recoach-server
+   docker run --rm -v "$PWD:/w" -w /w python:3.10-slim \
+     sh -c "pip install -q -r requirements.txt && pip freeze" > requirements.lock.txt
+   ```
+
+   > 曾经踩过的坑：该锁文件最初是在 Python 3.13 上生成的，其中的
+   > `websockets==17.0.1` 要求 `Python>=3.11`，而镜像是 3.10，
+   > 导致 `docker-compose build` 直接失败。锁文件只有在被真正安装时才暴露问题——
+   > 之前它一直没被镜像使用，所以这个不兼容潜伏了很久。
 6. **监控日志** - 设置日志告警
-7. **防火墙** - 只开放必要的端口（80、443）
+7. **防火墙** - 只开放必要的端口（80、443）。后端 8000 在 compose 中只绑定
+   `127.0.0.1`，不要改回 `0.0.0.0`——那会绕过 nginx 的身份头剥离
 
 ---
 

@@ -24,5 +24,6 @@ coverage/
 
 # 其他
 .env
+.env.*
 *.md
 tests/

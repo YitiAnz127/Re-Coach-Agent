@@ -12,12 +12,18 @@ export interface ServiceMeta {
   thinkingEnabled: boolean;
   reasoningEffort: "low" | "medium" | "high" | null;
   fairAbFork: boolean;
+  /** 各 provider 是否已配置密钥（布尔，不含密钥内容）。旧后端可能缺失。 */
+  keysPresent: Record<string, boolean>;
 }
 
 type JsonRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isServiceProvider(value: unknown): value is ServiceProvider {
+  return isProvider(value);
 }
 
 function isProvider(value: unknown): value is ServiceProvider {
@@ -62,6 +68,12 @@ export function parseServiceMeta(payload: unknown): ServiceMeta {
     thinkingEnabled: llm.thinkingEnabled,
     reasoningEffort: llm.reasoningEffort,
     fairAbFork: capabilities.fairAbFork === true,
+    // 可选字段：旧后端不返回时按"未知"处理（空对象），不影响其余功能。
+    keysPresent: isRecord(llm.keysPresent)
+      ? Object.fromEntries(
+          Object.entries(llm.keysPresent).map(([k, v]) => [k, v === true]),
+        )
+      : {},
   };
 }
 
@@ -84,6 +96,7 @@ export const demoServiceMeta: ServiceMeta = {
   provider: "demo",
   model: "local-mock",
   configured: false,
+  keysPresent: {},
   thinkingEnabled: false,
   reasoningEffort: null,
   fairAbFork: false,

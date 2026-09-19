@@ -6,6 +6,7 @@ import time
 from typing import Any, AsyncIterator
 
 from ..config import get_settings
+from ..errors import provider_failure_message
 from ..schemas import (
     Metrics,
     PersonalizationItem,
@@ -21,6 +22,7 @@ from . import compiler as compiler_service
 from . import events as event_service
 from . import gate as gate_service
 from . import memory as memory_service
+from . import selection as selection_service
 from . import turns as turn_store
 
 
@@ -50,12 +52,13 @@ def _suggested_actions(concept: str, scope: str) -> list[SuggestedAction]:
     return actions[:3]
 
 
-def _global_rules(user_id: str, memory_ids: set[str] | None = None) -> list[memory_service.Memory]:
+def _global_rules(user_id: str, memory_ids: set[str] | None = None, snapshot: list[memory_service.Memory] | None = None) -> list[memory_service.Memory]:
     """澄清前允许的最小预读：最多 1-2 条稳定全局交互规则（全部作用域为 *）。"""
-    rows = memory_service.list_memories(user_id, type_="interaction_rule")
+    rows = snapshot if snapshot is not None else memory_service.list_memories(user_id, type_="interaction_rule")
     return [
         m for m in rows
-        if (memory_ids is None or m.id in memory_ids)
+        if m.user_id == user_id and m.status == "active" and m.type == "interaction_rule"
+        and (memory_ids is None or m.id in memory_ids)
         and all(getattr(m, f) == "*" for f in memory_service.SCOPE_FIELDS)
     ][:2]
 
@@ -105,6 +108,14 @@ async def run_turn(
     memory_mutations_allowed = not is_fork
     fork_memory_ids = set(json.loads(fork["memory_snapshot_json"])) if is_fork else None
     fork_concept_ids = set(json.loads(fork["concept_snapshot_json"])) if is_fork else None
+    memory_snapshot = (
+        [memory_service._row_to_memory(row) for row in json.loads(fork["memory_content_json"])]
+        if is_fork and fork.get("memory_content_json") is not None else None
+    )
+    concept_snapshot = (
+        json.loads(fork["concept_content_json"])
+        if is_fork and fork.get("concept_content_json") is not None else None
+    )
     turn_started_at = time.perf_counter()
     assistant_parts: list[str] = []
     mode = "explain"
@@ -130,6 +141,24 @@ async def run_turn(
         )
         recent_for_gate = brief_service.recent_messages(session_id, limit=4)
         brief_service.save_message(session_id, turn_id, "user", user_text)
+
+        # ---- 澄清选项的「打字选择」识别 ----
+        # 澄清轮把选项标成 A/B/C/D/E，但用户经常直接打字回「1」或「A」。
+        # 不识别的话会被当成全新问题，又抛出一整篇泛泛的讲解
+        # （2026-09-18 实测：打字回「1」产生 1438 字符，点选同项是 1184 字符且针对性完全不同）。
+        # 原始输入已在上方落库（界面显示用户真正打的字），这里只改写后续环节看到
+        # 的语义文本，让「1」得到与点选第一项完全一致的讲解。
+        previous = turn_store.latest_completed_presentation(session_id)
+        resolved = selection_service.resolve_option_selection(
+            user_text, selection_service.parse_options(previous)
+        )
+        if resolved:
+            event_service.log_event(
+                user_id=user_id, session_id=session_id, turn_id=turn_id,
+                mode="explain", kind="clarification_resolved",
+                payload={"via": "typed_selector", "rawLen": len(user_text)},
+            )
+            user_text = resolved
 
         # ---- 第一级反馈门控（本地规则；复杂蒸馏是 P1 异步任务）----
         feedback = memory_service.classify_feedback(user_text)
@@ -187,7 +216,7 @@ async def run_turn(
         # 概念检测的 known_context 只允许用户自己的消息与全局交互规则参与：
         # assistant 输出是系统生成的，若混入其中，用户下一条无概念词的消息
         # 可能被上一轮回复里的词汇（如"sigmoid"）带偏（最长词优先）。
-        global_rules = _global_rules(user_id, fork_memory_ids) if effective_memory_on else []
+        global_rules = _global_rules(user_id, fork_memory_ids, memory_snapshot) if effective_memory_on else []
         context_hints = [brief.goal, brief.current_focus]
         context_hints.extend(
             message["content"]
@@ -278,6 +307,7 @@ async def run_turn(
                 task,
                 memory_on=effective_memory_on,
                 memory_ids=fork_memory_ids,
+                snapshot=memory_snapshot,
             )
             if global_rules:
                 known = {m.id for m in retrieval.selected}
@@ -292,11 +322,16 @@ async def run_turn(
                     latency_ms=retrieval.search_ms,
                 )
 
-            states = (
-                brief_service.concept_states_for(user_id, task, state_ids=fork_concept_ids)
-                if effective_memory_on
-                else []
-            )
+            if not effective_memory_on:
+                states = []
+            elif concept_snapshot is not None:
+                states = sorted(
+                    [s for s in concept_snapshot if s["user_id"] == user_id
+                     and (s["concept"] == task.concept or (not task.concept and s["domain"] == task.domain))],
+                    key=lambda s: s["updated_at"], reverse=True,
+                )[:5]
+            else:
+                states = brief_service.concept_states_for(user_id, task, state_ids=fork_concept_ids)
             recent = brief_service.recent_messages(session_id)
             context = compiler_service.compile_context(
                 task=task,
@@ -335,6 +370,14 @@ async def run_turn(
                 yield sse_event("assistant.thinking", turnId=turn_id, delta=delta)
                 continue
             # kind == "content"：用户可见正文
+            # 剥掉内部提示结构标记：模型偶尔会在正文里引用定界符
+            # （实测出现过「<untrusted_memory> 里没保存住选项列表」这种句子），
+            # 那会向用户暴露内部提示结构。系统提示已要求不要提及，
+            # 这里是输出侧的兜底。必须放在 append/yield 之前，
+            # 否则流式增量与落库正文会不一致。
+            delta = compiler_service.strip_internal_markers(delta)
+            if not delta:
+                continue
             if first_delta_at is None:
                 first_delta_at = time.perf_counter()
                 if prefix:
@@ -360,6 +403,9 @@ async def run_turn(
                 "provider": meta.provider,
                 "model": meta.model,
                 "fallback": meta.fallback,
+                "fallbackReason": meta.fallback_reason,
+                "requestedProvider": meta.requested_provider,
+                "requestedModel": meta.requested_model,
                 "thinkingTtftMs": meta.thinking_ttft_ms,
                 "continuationCount": meta.continuation_count,
                 "contentTtftMs": meta.content_ttft_ms,
@@ -389,6 +435,12 @@ async def run_turn(
                 contextCompileMs=0 if from_feedback else context.compile_ms,
                 memoryCapsuleTokens=0 if from_feedback else context.capsule_tokens,
                 totalInputTokens=0 if from_feedback else context.total_input_tokens,
+                # 如实上报本轮实际 provider 与降级状态：
+                # 只写进事件表而客户端看不到，等于用户永远不知道自己在读模板文本。
+                provider=meta.provider,
+                model=meta.model,
+                fallback=meta.fallback,
+                fallbackReason=meta.fallback_reason,
             ),
             retrospective=_retrospective(task, gate.plan) if _knowledge_unit_closed(user_text) else None,
             outputVerification=OutputVerification(**coach_service.verify_output(task, "".join(assistant_parts))),
@@ -417,14 +469,30 @@ async def run_turn(
             )
         raise
     except Exception as exc:  # noqa: BLE001 — 建流后异常必须以唯一 turn.error 结束
+        # fail-fast 模式下 provider 失败会抛 ProviderFailure：给出可操作的原因提示，
+        # 而不是笼统的 INTERNAL（"稍后重试"对密钥错误是无意义的建议）。
+        error_code = "INTERNAL"
+        error_message: str | None = None
+        error_retryable: bool | None = None
+        reason = getattr(exc, "reason", None)
+        if isinstance(exc, coach_service.ProviderFailure) and isinstance(reason, str):
+            error_code = "MODEL_UNAVAILABLE"
+            error_message, error_retryable = provider_failure_message(reason)
+
         if not canonical_committed:
             _mark_turn_failed(
                 user_id=user_id, session_id=session_id, turn_id=turn_id,
                 mode=mode, response_text="".join(assistant_parts), exc=exc,
-                error_code="INTERNAL",
+                error_code=error_code,
             )
         from ..errors import sse_error
-        yield sse_error("INTERNAL", turn_id=turn_id, request_id=request_id)
+        yield sse_error(
+            error_code,
+            turn_id=turn_id,
+            request_id=request_id,
+            message=error_message,
+            retryable=error_retryable,
+        )
         return
 
 
@@ -494,11 +562,23 @@ def _finalize_turn(
             clarification_question=clarification_question,
             from_feedback=from_feedback,
         )
-        brief_service.update_brief(session_id, updated, expected_version=expected_version)
-        event_service.log_event(
-            user_id=user_id, session_id=session_id, turn_id=turn_id,
-            mode=mode, kind="session_brief_updated", payload={"focus": focus},
+        new_version, applied = brief_service.update_brief_checked(
+            session_id, updated, expected_version=expected_version
         )
+        if applied:
+            event_service.log_event(
+                user_id=user_id, session_id=session_id, turn_id=turn_id,
+                mode=mode, kind="session_brief_updated", payload={"focus": focus},
+            )
+        else:
+            # CAS 冲突：本轮的 delta 未落库（并发轮次已推进版本）。
+            # 不重试合并（会放大竞态），但必须留下可观测记录——
+            # 否则 clarify_streak 等状态静默丢失，门控行为无法解释。
+            event_service.log_event(
+                user_id=user_id, session_id=session_id, turn_id=turn_id,
+                mode=mode, kind="brief_update_conflict",
+                payload={"focus": focus, "expectedVersion": expected_version, "currentVersion": new_version},
+            )
     except Exception as exc:  # noqa: BLE001
         event_service.log_event(
             user_id=user_id, session_id=session_id, turn_id=turn_id,

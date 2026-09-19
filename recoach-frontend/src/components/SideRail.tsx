@@ -8,8 +8,11 @@ import {
 } from "lucide-react";
 import {
   formatServiceProvider,
+  isServiceProvider,
   type ServiceMeta,
 } from "../services/service-meta";
+// 与对话区共用同一份判定，避免两处逻辑漂移
+import { fallbackNotice } from "../services/fallback-notice";
 import type { PerformanceMetrics, TurnPresentation } from "../types";
 
 interface SideRailProps {
@@ -51,6 +54,12 @@ export function SideRail({
   const personalizationIncrement = presentation
     ? presentation.metrics.memorySearchMs + presentation.metrics.contextCompileMs
     : null;
+  const notice = fallbackNotice(presentation, serviceMeta);
+  // 模型服务一栏显示"本轮实际用的是谁"：降级后显示模板，而不是继续显示配置值。
+  // provider 来自后端字符串，可能是未知值（版本不一致），需校验后再格式化。
+  const reported = presentation?.metrics?.provider;
+  const effectiveProvider = isServiceProvider(reported) ? reported : serviceMeta?.provider;
+  const effectiveModel = presentation?.metrics?.model || serviceMeta?.model;
 
   return (
     <div className="side-rail-content">
@@ -113,19 +122,29 @@ export function SideRail({
         <div className="service-model" aria-label="当前模型服务">
           <div>
             <span>模型服务</span>
-            <strong>{serviceMeta ? formatServiceProvider(serviceMeta.provider) : "读取中"}</strong>
+            <strong>
+              {effectiveProvider ? formatServiceProvider(effectiveProvider) : "读取中"}
+            </strong>
           </div>
           <div>
             <span>当前模型</span>
-            <strong>{serviceMeta?.model ?? "—"}</strong>
+            <strong>{effectiveModel ?? "—"}</strong>
           </div>
           {serviceMeta?.thinkingEnabled && (
             <span className="thinking-label">
               Thinking · {serviceMeta.reasoningEffort?.toUpperCase() ?? "ON"}
             </span>
           )}
-          {serviceMeta?.provider === "template" && (
-            <span className="fallback-label">当前为模板降级</span>
+          {/*
+            降级提示必须依据**本轮实际 provider**（presentation.metrics），
+            不能读 /meta 的配置值——否则配了真 key 但鉴权失败时，
+            界面会一边显示 "DeepSeek" 一边输出模板文本，用户无从察觉。
+            serviceMeta.provider === "template" 仅覆盖"压根没配模型"的情况。
+          */}
+          {notice && (
+            <span className="fallback-label" title={notice.hint}>
+              {notice.label}
+            </span>
           )}
         </div>
 

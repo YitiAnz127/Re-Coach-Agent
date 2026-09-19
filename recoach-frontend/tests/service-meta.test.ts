@@ -19,6 +19,7 @@ const deepseekPayload = {
       configured: true,
       thinkingEnabled: true,
       reasoningEffort: "high",
+      keysPresent: { deepseek: true, anthropic: false, openaiCompatible: false },
     },
     capabilities: {
       fairAbFork: true,
@@ -36,6 +37,32 @@ test("parses DeepSeek service metadata", () => {
     thinkingEnabled: true,
     reasoningEffort: "high",
     fairAbFork: true,
+    keysPresent: { deepseek: true, anthropic: false, openaiCompatible: false },
+  });
+});
+
+test("keysPresent is optional for older backends", () => {
+  // 旧后端不返回该字段时不应导致整体解析失败，按"未知"处理。
+  const payload = structuredClone(deepseekPayload);
+  delete (payload.data.llm as { keysPresent?: unknown }).keysPresent;
+
+  assert.deepEqual(parseServiceMeta(payload).keysPresent, {});
+});
+
+test("keysPresent only keeps boolean true entries", () => {
+  // 后端可能返回非布尔值（版本不一致）；只有严格 true 才算"已配置"，
+  // 否则会把 "false" 字符串之类的值误判成已配置。
+  const payload = structuredClone(deepseekPayload);
+  (payload.data.llm as { keysPresent: unknown }).keysPresent = {
+    deepseek: true,
+    anthropic: "false",
+    openaiCompatible: 0,
+  };
+
+  assert.deepEqual(parseServiceMeta(payload).keysPresent, {
+    deepseek: true,
+    anthropic: false,
+    openaiCompatible: false,
   });
 });
 

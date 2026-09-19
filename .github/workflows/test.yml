@@ -1,103 +1,72 @@
-name: Tests
+name: Test
 
+# README 顶部的 Tests badge 指向本文件，重命名会同时弄坏 badge。
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, develop ]
+  workflow_dispatch:
 
 jobs:
-  backend-tests:
-    name: Backend Tests
+  backend:
+    name: 后端测试与一致性审计
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        
-    - name: Cache pip packages
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    
-    - name: Install dependencies
-      run: |
-        cd recoach-server
-        pip install --upgrade pip
-        pip install -r requirements.txt
-        
-    - name: Run tests
-      run: |
-        cd recoach-server
-        pytest tests/ -v --tb=short
+      - uses: actions/checkout@v4
 
-  frontend-tests:
-    name: Frontend Tests
+      - uses: actions/setup-python@v5
+        with:
+          # 与 recoach-server/Dockerfile 的基础镜像保持一致：
+          # 用更高版本跑 CI 会掩盖只在 3.10 上出现的问题。
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: recoach-server/requirements.txt
+
+      - name: 安装依赖
+        working-directory: recoach-server
+        run: pip install -r requirements.txt
+
+      - name: 运行后端测试
+        working-directory: recoach-server
+        run: pytest -q
+
+      # 单看某个文件发现不了的问题：配置项加了没同步 .env.example、
+      # 后端字段加了没同步前端类型、残留调试输出等。
+      - name: 跨文件一致性审计
+        run: python tools/consistency_audit.py
+
+  frontend:
+    name: 前端类型检查与测试
     runs-on: ubuntu-latest
-    
+    defaults:
+      run:
+        working-directory: recoach-frontend
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-        
-    - name: Cache node modules
-      uses: actions/cache@v4
-      with:
-        path: ~/.npm
-        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-node-
-    
-    - name: Install dependencies
-      run: |
-        cd recoach-frontend
-        npm ci
-        
-    - name: Type check
-      run: |
-        cd recoach-frontend
-        npm run check
-        
-    - name: Run tests
-      run: |
-        cd recoach-frontend
-        npm test
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: recoach-frontend/package-lock.json
+
+      # 用 ci 而不是 install：严格按 package-lock.json 安装，构建可复现
+      - run: npm ci
+
+      - name: 类型检查
+        run: npx tsc --noEmit -p tsconfig.app.json
+
+      - name: 运行前端测试
+        run: npm test
 
   docker-build:
-    name: Docker Build Test
+    name: 镜像可构建
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests]
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
-    - name: Build backend image
-      uses: docker/build-push-action@v4
-      with:
-        context: ./recoach-server
-        push: false
-        tags: recoach-backend:test
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-    
-    - name: Build frontend image
-      uses: docker/build-push-action@v4
-      with:
-        context: ./recoach-frontend
-        push: false
-        tags: recoach-frontend:test
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - uses: actions/checkout@v4
+      # 只验证构建成功，不启动：requirements.lock.txt 与基础镜像的 Python
+      # 版本不匹配这类问题，只有真正构建才暴露（曾经就因此构建失败过）。
+      - name: 构建后端镜像
+        run: docker build -t recoach-backend:ci ./recoach-server
+      - name: 构建前端镜像
+        run: docker build -t recoach-frontend:ci ./recoach-frontend

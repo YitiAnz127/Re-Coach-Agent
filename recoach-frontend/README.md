@@ -9,7 +9,7 @@
 
 ## 1. 这是什么
 
-这是知返 Re: Coach 的浏览器客户端，直接连接 `recoach-server`：创建学习会话、流式接收讲解、展示思考过程、个性化依据与性能指标。仓库保留 Demo 数据，便于后端不可用时单独展示 UI；项目根目录的 `.env.local` 默认启用真实后端。
+这是知返 Re: Coach 的浏览器客户端，直接连接 `recoach-server`：创建学习会话、流式接收讲解、展示思考过程、个性化依据与性能指标。仓库保留 Demo 数据，便于后端不可用时单独展示 UI；未设置环境变量时默认经同源 `/api/v1` 连接真实后端。
 
 一句话定位：
 
@@ -83,10 +83,10 @@ Copy-Item .env.example .env.local
 
 ```env
 VITE_DEMO_MODE=false
-VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
+VITE_API_BASE_URL=/api/v1
 ```
 
-修改任何 `VITE_*` 后必须重启开发服务器。未显式设置 `VITE_DEMO_MODE=true` 时默认连接真实后端。模型密钥和数据库凭据绝不能放入 `VITE_*`，因为它们会进入浏览器产物。
+开发服务器将 `/api` 转发到 `http://127.0.0.1:8000`。修改任何 `VITE_*` 后必须重启开发服务器；生产构建必须重新构建。Docker Compose 通过 Nginx 同源代理连接 backend，`VITE_*` 由构建参数传入，不能通过容器运行时环境修改已构建页面。未显式设置 `VITE_DEMO_MODE=true` 时默认连接真实后端。模型密钥和数据库凭据绝不能放入 `VITE_*`，因为它们会进入浏览器产物。
 
 如需只展示 Mock 演示：
 
@@ -125,6 +125,7 @@ Smoke 会验证：前端页面可访问、后端 health、CORS、Session 创建�
 ```powershell
 $env:RECOACH_FRONTEND_URL='http://127.0.0.1:4173'
 $env:RECOACH_API_BASE_URL='http://127.0.0.1:8000/api/v1'
+$env:RECOACH_BACKEND_URL='http://127.0.0.1:8000'
 npm run smoke
 ```
 
@@ -146,6 +147,8 @@ tests/                               协议与重试单元测试
 scripts/e2e-smoke.mjs                前后端 smoke 联调
 ```
 
+旧版 Fork 仅保存记录 ID，无法追溯恢复创建时的内容；升级后请重新创建对照，以使用完整内容快照。服务启动时会自动迁移数据库，保留既有会话和记录。
+
 ## 9. 已实现与未实现边界
 
 ### 依赖后端 P1/P2 后才能真实展示
@@ -163,7 +166,7 @@ scripts/e2e-smoke.mjs                前后端 smoke 联调
 - `GET /turns/:turnId` 的断线恢复轮询/重连。
 - 正式登录、退出、身份过期和权限错误体验。
 - 自动化真实浏览器 E2E、视觉回归和无障碍审计；当前 smoke 是 HTTP 级联调。
-- 生产部署的同源反向代理、缓存策略、CSP 和错误监控。
+- 生产部署的缓存策略、CSP 和错误监控。Docker 已提供同源反向代理。
 
 ## 10. 常见问题
 

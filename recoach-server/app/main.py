@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -9,11 +11,16 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import db
+from .auth import AuthMiddleware
 from .config import get_settings
 from .errors import error_payload
 from .ids import new_id
 from .routes import forks, memories, meta, metrics, sessions, turns
 from .services import turns as turn_store
+
+# 客户端可控的 x-request-id 只允许这一组字符，避免响应头/日志注入。
+_REQUEST_ID_RE = re.compile(r"[^A-Za-z0-9._:-]")
+_REQUEST_ID_MAX = 128
 
 
 @asynccontextmanager
@@ -25,22 +32,36 @@ async def lifespan(_app: FastAPI):
     yield
 
 
+def _sanitize_request_id(raw: str) -> str:
+    """只保留安全字符并截断；不合法/超长一律丢弃，由服务端重新生成。"""
+    cleaned = _REQUEST_ID_RE.sub("", raw)[:_REQUEST_ID_MAX]
+    return cleaned or new_id("req")
+
+
 def _request_id(request: Request) -> str:
     return getattr(request.state, "request_id", None) or new_id("req")
 
 
 def _get_cors_headers(request: Request, settings) -> dict[str, str]:
     """从请求的 Origin 头提取并验证 CORS 响应头。
-    
+
     这确保异常处理器返回的响应也包含正确的 CORS 头。
+    通配符配置下不回显具体 Origin，也不带凭证——与 CORSMiddleware 的判定保持一致。
     """
     origin = request.headers.get("origin", "")
     headers = {}
-    
-    if origin and origin in settings.cors_origin_list:
+
+    if not origin:
+        return headers
+
+    if "*" in settings.cors_origin_list:
+        headers["access-control-allow-origin"] = "*"
+        return headers
+
+    if origin in settings.cors_origin_list:
         headers["access-control-allow-origin"] = origin
         headers["access-control-allow-credentials"] = "true"
-    
+
     return headers
 
 
@@ -83,6 +104,93 @@ def _envelope(
     )
 
 
+class MaxBodySizeMiddleware:
+    """限制请求体大小。
+
+    uvicorn 没有请求体大小上限的 CLI 选项，而 FastAPI 会把整个 body 读进内存
+    再交给 Pydantic 校验，所以必须在读之前拦。
+
+    Content-Length 只用于提前拒绝明显超限的请求；最终仍按实际收到的字节数
+    判断。客户端声明较小长度、漏掉长度或使用 chunked 时都不能绕过上限。
+
+    代价：请求体会先在中间件里缓冲（最多 max_bytes），再重放给应用。
+    对 JSON API 无影响；若将来要支持流式上传，需要改成按块校验。
+    """
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def _deny(self, scope, send, status: int = 413) -> None:
+        request_id = (scope.get("state") or {}).get("request_id") or ""
+        payload = json.dumps(
+            {"error": error_payload("INVALID_REQUEST", request_id=request_id or None)},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        headers = [
+            (b"content-type", b"application/json; charset=utf-8"),
+            (b"content-length", str(len(payload)).encode("latin-1")),
+        ]
+        if request_id:
+            headers.append((b"x-request-id", request_id.encode("latin-1")))
+        await send({"type": "http.response.start", "status": status, "headers": headers})
+        await send({"type": "http.response.body", "body": payload})
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or self.max_bytes <= 0:
+            await self.app(scope, receive, send)
+            return
+
+        declared = next(
+            (
+                v.decode("latin-1").strip()
+                for k, v in scope.get("headers", [])
+                if k.lower() == b"content-length"
+            ),
+            "",
+        )
+        try:
+            length = int(declared) if declared else None
+        except ValueError:
+            await self._deny(scope, send, status=400)
+            return
+
+        if length is not None and length < 0:
+            await self._deny(scope, send, status=400)
+            return
+
+        # 快路径：声明就超限，连读都不用读
+        if length is not None and length > self.max_bytes:
+            await self._deny(scope, send)
+            return
+
+        # 不信任声明值：始终有界读取并按实际字节数复核。
+        body = bytearray()
+        finished = False
+        while not finished:
+            message = await receive()
+            if message["type"] == "http.request":
+                body.extend(message.get("body", b""))
+                if len(body) > self.max_bytes:
+                    await self._deny(scope, send)
+                    return
+                finished = not message.get("more_body", False)
+            elif message["type"] == "http.disconnect":
+                return
+
+        drained = False
+
+        async def replay_receive():
+            nonlocal drained
+            if not drained:
+                drained = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            # body 已交付；后续调用交还给原始 receive（例如等待 http.disconnect）
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
+
+
 class RequestIdMiddleware:
     """纯 ASGI 中间件：生成/透传 x-request-id 并注入每个响应头。
 
@@ -102,8 +210,8 @@ class RequestIdMiddleware:
             (v.decode("latin-1") for k, v in scope.get("headers", []) if k.lower() == b"x-request-id"),
             "",
         ).strip()
-        if not request_id:
-            request_id = new_id("req")
+        # 客户端可控，必须先净化再回填进响应头与日志。
+        request_id = _sanitize_request_id(request_id)
         scope.setdefault("state", {})["request_id"] = request_id
 
         async def send_wrapper(message):
@@ -120,12 +228,25 @@ class RequestIdMiddleware:
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="知返 Re:Coach API", version="1.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="知返 Re:Coach API",
+        version="1.1.0",
+        lifespan=lifespan,
+        # 生产（已配令牌）默认不暴露交互式文档与 openapi.json。
+        docs_url="/docs" if settings.docs_enabled else None,
+        redoc_url="/redoc" if settings.docs_enabled else None,
+        openapi_url="/openapi.json" if settings.docs_enabled else None,
+    )
 
+    # 中间件自外向内：RequestId -> MaxBodySize -> CORS -> Auth -> 路由。
+    # Auth 必须位于 CORS 内层，否则 401 响应没有 CORS 头，浏览器读不到错误体。
+    # MaxBodySize 放在 Auth 外层：超大请求体不该先做令牌比较再拒绝。
+    app.add_middleware(AuthMiddleware)
+    app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.max_body_bytes)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
+        allow_credentials=settings.allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )

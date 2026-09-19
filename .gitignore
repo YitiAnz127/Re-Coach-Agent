@@ -1,52 +1,55 @@
-# Python
+# ---- 机密：绝不入库 ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+
+# ---- 数据库：含用户对话与记忆，属于个人数据 ----
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ---- Python ----
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
 .Python
 venv/
+.venv/
 env/
-ENV/
-.venv
-*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node / 前端 ----
+node_modules/
 dist/
 build/
-
-# Node
-node_modules/
+.vite/
+coverage/
 npm-debug.log*
-yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
-dist/
-.npm
+pnpm-debug.log*
 
-# IDEs
+# ---- 构建与安装日志（可能夹带私服 token）----
+*.log
+install.log
+npm.err.log
+npm.out.log
+
+# ---- 编辑器 / 系统 ----
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-
-# OS
 .DS_Store
 Thumbs.db
-
-# Databases
-*.db
-*.db-shm
-*.db-wal
-/data/
-
-# Environment
-.env
-.env.local
-
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-
-# Logs
-*.log
-logs/
+desktop.ini

@@ -118,6 +118,53 @@ def _build_plan(task: ResolvedTask) -> list[str]:
     return plan[:5]
 
 
+# 有语义内容的字符：中日韩文字或拉丁字母/数字组成的"词"。
+# 纯数字单独看不算语义（"1" 是编号，不是概念），因此数字只有在与其它
+# 内容组合时才计入。
+_SEMANTIC = re.compile(r"[㐀-䶿一-鿿豈-﫿]|[A-Za-z]{2,}")
+
+
+def _is_non_informative(compact: str) -> bool:
+    """输入是否没有任何语义内容（纯编号、纯符号、单个字母）。
+
+    判定必须基于**原始文本**而不是补全后的 concept：
+    concept 会从会话上下文继承，所以"1"在聊过反向传播的会话里
+    也会被解析出 concept，从而被误当成有效提问。
+    """
+    if not compact:
+        return True
+    # 去掉所有编号/标点后若什么都不剩，就是纯选择符或纯符号
+    stripped = re.sub(r"[0-9A-Za-z\s，。？！,.?!、：:；;（）()\[\]{}【】\-—_/\\|~`'\"*+#@$%^&<>]", "", compact)
+    if stripped:
+        return False
+    # 剩下的全是编号/字母/符号：只有当其中不含"成词"的内容时才算非信息性
+    return not _SEMANTIC.search(compact)
+
+
+def _starter_options() -> list[ClarificationOption]:
+    """输入无法理解时给出的入门入口，让用户一键就能开始。"""
+    return [
+        ClarificationOption(
+            id="gradient",
+            label="梯度下降",
+            detail="为什么沿负梯度方向走能降低损失",
+            followUp="我想先建立梯度下降的整体直觉：为什么沿负梯度方向走能降低损失。用简单的例子，先不要公式。",
+        ),
+        ClarificationOption(
+            id="backprop",
+            label="反向传播",
+            detail="梯度是怎么一层层传回去的",
+            followUp="我想先建立反向传播的整体直觉：梯度是怎么一层层传回去的。用简单的例子，先不要公式。",
+        ),
+        ClarificationOption(
+            id="overfit",
+            label="过拟合与正则化",
+            detail="为什么模型会记住训练集",
+            followUp="我想先建立过拟合与正则化的整体直觉：为什么模型会记住训练集。用简单的例子，先不要公式。",
+        ),
+    ]
+
+
 def _clarification_options(concept: str) -> list[ClarificationOption]:
     topic = concept or "这个问题"
     return [
@@ -214,14 +261,31 @@ def run_gate(user_text: str, *, clarify_streak: int, known_context: list[str] | 
         base.decision = "NEEDS_CLARIFICATION"
     elif confused and not specific and len(compact) <= 40:
         base.decision = "NEEDS_CLARIFICATION"
+    elif _is_non_informative(compact):
+        # 纯编号/符号（"1"、"A"、"???"）没有任何语义内容。
+        # 之前这类输入因为不含 broad 词而直接放行，导致发一个"1"
+        # 就换来一整篇泛泛讲解（实测最长 3202 字符）。
+        base.decision = "NEEDS_CLARIFICATION"
 
     if base.decision == "NEEDS_CLARIFICATION":
-        topic = concept or "这个概念"
         base.focus = "定位真实卡点"
         base.plan = ["判断缺失信息是否会改变讲解路线", "只提出一个高信息量问题"]
+        if _is_non_informative(compact):
+            # 输入本身没有语义（"1"/"A"/"???"），此时问"你卡在哪"没有意义——
+            # 用户根本没说想问什么。直接说清没看懂，并给出可选的入口。
+            base.focus = "等待明确的问题"
+            base.plan = ["说明没看懂这条输入", "给出几个可以直接开始的入口"]
+            base.question = (
+                "这条消息里只有编号或符号，我没看出你想聊哪个概念。\n\n"
+                "如果你是在回应上一轮的选项，可以直接点选项，或回复选项前的字母（如 A）。\n"
+                "也可以直接告诉我你想弄懂什么，比如："
+            )
+            base.options = _starter_options()
+            return base
+        topic = concept or "这个概念"
         base.question = (
             f"先确认一个会显著改变讲解路线的点：关于「{topic}」，你目前最接近哪种情况？\n\n"
-            "只选最接近的一项就好，我会从那里开始。"
+            "点选项，或直接回复前面的字母/编号都可以（例如 A 或 1）。"
         )
         base.options = _clarification_options(concept)
         return base

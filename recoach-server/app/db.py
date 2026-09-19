@@ -154,6 +154,14 @@ MIGRATIONS: tuple[tuple[int, str, str], ...] = (
         ALTER TABLE session_forks ADD COLUMN concept_snapshot_json TEXT NOT NULL DEFAULT '[]';
         """,
     ),
+    (
+        4,
+        "fork_content_snapshots",
+        """
+        ALTER TABLE session_forks ADD COLUMN memory_content_json TEXT;
+        ALTER TABLE session_forks ADD COLUMN concept_content_json TEXT;
+        """,
+    ),
 )
 
 FTS_SCHEMA = """

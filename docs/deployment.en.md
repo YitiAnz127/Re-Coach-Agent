@@ -48,7 +48,7 @@ npm install
 npm run dev
 ```
 
-Visit http://localhost:5173
+Visit http://localhost:4173
 
 ---
 
@@ -470,6 +470,13 @@ services:
 ---
 
 ## Security Recommendations
+
+The bundled web client does not collect, store, or send `RECOACH_API_TOKEN`.
+Setting that token on the backend alone therefore makes browser API calls return
+`401`. Keep the default Compose deployment bound to loopback for local use. To
+publish the web UI, put an authenticated reverse proxy in front of it and inject
+the backend Bearer token and trusted user identity on the server side. Never put
+the shared token in a `VITE_*` variable or the frontend image.
 
 1. **Use HTTPS** - a production environment must use SSL certificates
 2. **Protect API keys** - use environment variables or a secrets manager

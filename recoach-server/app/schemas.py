@@ -93,6 +93,14 @@ class Metrics(BaseModel):
     contextCompileMs: int = 0
     memoryCapsuleTokens: int = 0
     totalInputTokens: int = 0
+    # 本轮**实际**使用的 provider/model。配置值与实际值可能不同：
+    # 真实 provider 在首字前失败会降级为模板，此时 provider="template"。
+    # 客户端必须依据这两个字段判断降级，而不是读 /meta 的配置值。
+    provider: str = ""
+    model: str = ""
+    # 是否发生了模板降级，以及粗粒度原因（AUTH/QUOTA/TIMEOUT/NETWORK/PROVIDER_ERROR/...）
+    fallback: bool = False
+    fallbackReason: str = ""
 
 
 class ClarificationOption(BaseModel):

@@ -1,5 +1,7 @@
 import { AlertTriangle, ArrowRight, Check, FlaskConical, RotateCcw } from "lucide-react";
 import { FormulaText } from "./FormulaText";
+import { fallbackNotice } from "../services/fallback-notice";
+import type { ServiceMeta } from "../services/service-meta";
 import type {
   ChatMessage,
   ClarificationOption,
@@ -12,6 +14,7 @@ interface ConversationProps {
   messages: ChatMessage[];
   onAction: (prompt: string) => void;
   onRetry: (messageId: string) => void;
+  serviceMeta?: ServiceMeta;
 }
 
 function ClarificationChoices({
@@ -149,10 +152,12 @@ function AssistantMessage({
   message,
   onAction,
   onRetry,
+  serviceMeta,
 }: {
   message: ChatMessage;
   onAction: (prompt: string) => void;
   onRetry: (messageId: string) => void;
+  serviceMeta?: ServiceMeta;
 }) {
   const presentation = message.presentation;
   return (
@@ -206,6 +211,16 @@ function AssistantMessage({
               回答不完整：输出长度受限，内容可能被截断。可换一种更聚焦的问法，或点击重新发送。
             </div>
           )}
+          {/*
+            降级提示必须出现在对话区，不能只放侧栏：
+            侧栏只在 Performance 视图里渲染，而用户默认停在 Chat 视图，
+            放在那里等于用户看不到——而"用户不知道自己在读模板文本"正是要解决的问题。
+          */}
+          {fallbackNotice(presentation, serviceMeta) && (
+            <div className="truncated-notice fallback-notice" role="status">
+              {fallbackNotice(presentation, serviceMeta)!.detail}
+            </div>
+          )}
         </>
       )}
       {presentation?.clarificationOptions && (
@@ -218,7 +233,7 @@ function AssistantMessage({
   );
 }
 
-export function Conversation({ messages, onAction, onRetry }: ConversationProps) {
+export function Conversation({ messages, onAction, onRetry, serviceMeta }: ConversationProps) {
   return (
     <section className="conversation" aria-label="学习对话">
       {messages.map((message) =>
@@ -233,6 +248,7 @@ export function Conversation({ messages, onAction, onRetry }: ConversationProps)
             message={message}
             onAction={onAction}
             onRetry={onRetry}
+            serviceMeta={serviceMeta}
           />
         ),
       )}

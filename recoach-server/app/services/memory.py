@@ -12,6 +12,15 @@ from ..ids import new_id, now_iso
 from ..schemas import Memory, ResolvedTask
 from ..tokens import estimate_tokens
 
+# 单轮检索参与打分的候选上限。记忆条数随反馈轮次无界增长，
+# 全量载入+打分会让单轮 CPU 成本线性上升；召回本就只选 1~3 条，
+# 截断到最近更新的若干条即可，代价可忽略。
+MEMORY_CANDIDATE_LIMIT = 500
+
+# 自然语言遗忘的最小关键字长度。再短就会命中共用字（"你"/"我"/"的"），
+# 一次误解析即不可逆归档大量无关记忆。
+MIN_FORGET_KEYWORD_LEN = 2
+
 # 证据强度排序（v0.6 §8.3）：显式长期规则 > 显式纠正 > 多次独立重复 > 认可的讲法 > 单次隐式候选
 EVIDENCE_STRENGTH = {
     "user_explicit_longterm": 1.0,
@@ -121,6 +130,8 @@ def _recency(updated_at: str) -> float:
 
 _CJK_RUN_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+")
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+# FTS5 MATCH \u77ed\u8bed\u91cc\u88ab\u53cc\u5f15\u53f7\u5305\u88f9\u7684 token \u5141\u8bb8\u7684\u5b57\u7b26\u96c6\uff08\u89c1 _fts_candidates\uff09\u3002
+_FTS_SAFE_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
 def _lexical_tokens(text: str) -> list[str]:
@@ -141,7 +152,15 @@ def _fts_candidates(user_id: str, text: str) -> dict[str, float]:
         return {}
 
     scores: dict[str, float] = {}
-    fts_tokens = [token for token in tokens if not _CJK_RUN_RE.fullmatch(token)]
+    # 在 FTS 边界再断言一次白名单：token 目前由 _WORD_RE 保证只含
+    # [A-Za-z0-9_]，但下面的 f'"{token}"' 并不是转义——若将来放宽 _WORD_RE，
+    # 含引号的 token 会闭合短语并进入 FTS 语法。过滤后为空则整段跳过 FTS，
+    # 由下方 LIKE 兜底，而不是直接返回空结果。
+    fts_tokens = [
+        token
+        for token in tokens
+        if not _CJK_RUN_RE.fullmatch(token) and _FTS_SAFE_TOKEN_RE.fullmatch(token)
+    ]
     fts_succeeded = False
     if db.FTS5_AVAILABLE and fts_tokens:
         match = " OR ".join(f'"{token}"' for token in fts_tokens)
@@ -193,6 +212,7 @@ def retrieve(
     *,
     memory_on: bool | None = None,
     memory_ids: set[str] | None = None,
+    snapshot: list[Memory] | None = None,
 ) -> RetrievalResult:
     """问题完整后的完整检索：硬过滤 → 作用域筛选 → FTS5 候选 → 排序 → 选 1-3 条（硬上限 4）。
 
@@ -205,13 +225,19 @@ def retrieve(
     if not effective_memory_on:
         return result
 
-    rows = db.query(
-        "SELECT * FROM memories WHERE user_id=? AND status='active'", (user_id,)
-    )
-    memories = [
-        _row_to_memory(r) for r in rows
-        if memory_ids is None or r["id"] in memory_ids
+    # 候选集必须有上限：记忆条数由用户反馈轮次决定，可无限增长，
+    # 全量载入 + 全量打分会让单轮成本随历史线性上升（CPU DoS）。
+    # 只取最近更新的 hard_limit 条参与排序——召回本来就只选 1~3 条。
+    candidates = snapshot if snapshot is not None else [
+        _row_to_memory(row) for row in db.query(
+            """SELECT * FROM memories
+               WHERE user_id=? AND status='active'
+               ORDER BY updated_at DESC LIMIT ?""",
+            (user_id, MEMORY_CANDIDATE_LIMIT),
+        )
     ]
+    memories = [m for m in candidates if m.user_id == user_id and m.status == "active"
+                and (memory_ids is None or m.id in memory_ids)]
     if not memories:
         result.search_ms = int((time.perf_counter() - started) * 1000)
         return result
@@ -219,7 +245,12 @@ def retrieve(
     query_text = " ".join(
         [task.concept, task.proposition, task.goal, task.task_scope]
     ).strip()
-    lexical = _fts_candidates(user_id, query_text)
+    if snapshot is None:
+        lexical = _fts_candidates(user_id, query_text)
+    else:
+        tokens = _lexical_tokens(query_text)
+        lexical = {m.id: sum(token.lower() in m.rule.lower() for token in tokens) / max(1, len(tokens))
+                   for m in memories}
 
     scored: list[tuple[float, Memory]] = []
     for m in memories:
@@ -362,6 +393,11 @@ def forget_memories(user_id: str, keyword: str, source_event_id: str) -> list[st
     keyword = keyword.strip()
     # 未能解析出遗忘对象时必须安全无操作，不能把空字符串解释为“全部记忆”。
     if not keyword:
+        return []
+    # 关键字过短时 substring 匹配会退化：例如「忘记关于你的规则」解析出的
+    # 关键字是「你」，会把所有含「你」的记忆一并归档，且 status 翻转不可逆。
+    # 低于最小长度时直接判定"没有找到"（上层据此回报"没有找到"），不做任何归档。
+    if len(keyword) < MIN_FORGET_KEYWORD_LEN:
         return []
 
     marker = f'%"{source_event_id}"%'
