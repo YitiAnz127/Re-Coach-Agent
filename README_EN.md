@@ -8,6 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Version:** v1.1.0 (phase `p1`, policy version `policy_1.1.0`) — read from the running `GET /api/v1/meta`
+
 **Core principles:** First understand the question, then retrieve relevant memories; minimal calls, low latency, automatic memory, clear scope.
 
 ---
@@ -138,8 +139,11 @@ Minimal session state
 ## 🛠 Tech Stack
 
 **Frontend**: React 19 + TypeScript 5.9 + Vite 8 + KaTeX (`react-markdown` / `remark-math` / `rehype-katex`)
+
 **Backend**: FastAPI + SQLite (WAL + FTS5, falling back to LIKE) + SSE; Python 3.10 in the image and CI, 3.11 in the local venv
+
 **TUI**: TypeScript + `@earendil-works/pi-tui` + chalk, JSON file persistence
+
 **LLM**: `template` (default, no key) / `openai_compatible` / `deepseek` / `anthropic`
 
 ---
