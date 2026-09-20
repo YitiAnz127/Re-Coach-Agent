@@ -54,10 +54,8 @@ re-coach-tui/dist/               # TUI 构建产物
 ### 根目录
 
 - **README.md / README_EN.md**: 项目介绍、快速开始、仓库组成、文档索引
-- **docker-compose.yml**: 一键启动配置。只放容器部署特有的值（DB 绝对路径、令牌、可信网段），
-  应用配置由 `env_file` 从 `recoach-server/.env` 注入
-- **tools/consistency_audit.py**: 检查 `.env.example` 与 `config.py` 字段/默认值是否同步、
-  后端 Metrics 字段是否同步到前端与 TUI 类型、错误码是否被前端硬编码、是否残留调试输出
+- **docker-compose.yml**: 一键启动配置。只放容器部署特有的值（DB 绝对路径、令牌、可信网段），应用配置由 `env_file` 从 `recoach-server/.env` 注入
+- **tools/consistency_audit.py**: 检查 `.env.example` 与 `config.py` 字段/默认值是否同步、后端 Metrics 字段是否同步到前端与 TUI 类型、错误码是否被前端硬编码、是否残留调试输出
 
 ### 后端 (recoach-server/)
 
@@ -156,8 +154,7 @@ ai-coach-skill-repo/
     └── Claude Desktop/SKILL.md
 ```
 
-三个 `SKILL.md` 是**同一份内容的三个副本**（适配各平台的 Skill / Instructions 机制），
-不包含可执行代码，也不被上面三个应用引用。
+三个 `SKILL.md` 是**同一份内容的三个副本**（适配各平台的 Skill / Instructions 机制），不包含可执行代码，也不被上面三个应用引用。
 
 ## 文档
 

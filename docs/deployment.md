@@ -35,13 +35,9 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-不使用 uv 时用标准库等价完成：`python -m venv .venv` → `.\\.venv\\Scripts\\Activate.ps1` →
-`python -m pip install -r requirements.txt`。macOS / Linux 用 `python3 -m venv .venv` +
-`source .venv/bin/activate`，启动命令为 `./.venv/bin/python -m uvicorn ...`。
+不使用 uv 时用标准库等价完成：`python -m venv .venv` → `.\\.venv\\Scripts\\Activate.ps1` → `python -m pip install -r requirements.txt`。macOS / Linux 用 `python3 -m venv .venv` + `source .venv/bin/activate`，启动命令为 `./.venv/bin/python -m uvicorn ...`。
 
-> 这里装的是 `requirements.txt` 而不是 `requirements.lock.txt`：锁文件由 Linux 的 `pip freeze`
-> 生成，不保留环境标记，其中的 `uvloop` 只支持 Linux/macOS，在 Windows 上会编译失败并中断整条安装。
-> 锁文件用于镜像构建。
+> 这里装的是 `requirements.txt` 而不是 `requirements.lock.txt`：锁文件由 Linux 的 `pip freeze` 生成，不保留环境标记，其中的 `uvloop` 只支持 Linux/macOS，在 Windows 上会编译失败并中断整条安装。锁文件用于镜像构建。
 
 ### 前端
 
@@ -55,8 +51,7 @@ npm ci
 npm run dev
 ```
 
-访问 http://127.0.0.1:4173。端口由 `vite.config.ts` 固定（`strictPort: true`）并与后端 CORS 白名单一致，
-不会退到 5173；`/api` 由 Vite 代理到 `http://127.0.0.1:8000`。
+访问 http://127.0.0.1:4173。端口由 `vite.config.ts` 固定（`strictPort: true`）并与后端 CORS 白名单一致，不会退到 5173；`/api` 由 Vite 代理到 `http://127.0.0.1:8000`。
 
 ### 终端版（可选）
 
@@ -106,8 +101,7 @@ docker compose up -d --force-recreate backend
 
 Compose 通过 `env_file: ./recoach-server/.env` 把这份配置注入容器（文件缺失时不报错，走内置默认值）。
 
-> **不要**把模型配置写进 `docker-compose.yml` 的 `environment`：那里的优先级高于 `env_file`，
-> 会静默覆盖用户自己的 `.env`，表现为"改了 `.env` 却不生效"。
+> **不要**把模型配置写进 `docker-compose.yml` 的 `environment`：那里的优先级高于 `env_file`，会静默覆盖用户自己的 `.env`，表现为"改了 `.env` 却不生效"。
 
 ### 自定义端口
 
@@ -117,18 +111,13 @@ Compose 通过 `env_file: ./recoach-server/.env` 把这份配置注入容器（�
 RECOACH_BACKEND_PORT=8100 docker compose up -d
 ```
 
-前端入口端口写死在 `docker-compose.yml` 的 `127.0.0.1:4173:4173`。若要改动，除了改端口映射，
-还必须同步后端 `.env` 的 `RECOACH_CORS_ORIGINS`（换成新的来源），否则浏览器会因 CORS 失败读不到响应。
-不要改成 `0.0.0.0:4173`——原因见[访问控制（必读）](#访问控制必读)。
+前端入口端口写死在 `docker-compose.yml` 的 `127.0.0.1:4173:4173`。若要改动，除了改端口映射，还必须同步后端 `.env` 的 `RECOACH_CORS_ORIGINS`（换成新的来源），否则浏览器会因 CORS 失败读不到响应。不要改成 `0.0.0.0:4173`——原因见[访问控制（必读）](#访问控制必读)。
 
 ---
 
 ## 生产环境部署
 
-> **先读这一节的前提**：当前项目的定位是**单用户本地自用**。内置 Web 客户端没有登录页，
-> 令牌模式对它没有意义（它不会发送令牌）。因此"生产环境部署"在本项目里指的是
-> **在可信网络内长期运行**，而不是面向互不信任的多用户公网服务。要对外提供 Web 界面，
-> 必须先在外层反向代理接入登录，详见[安全建议](#安全建议)。
+> **先读这一节的前提**：当前项目的定位是**单用户本地自用**。内置 Web 客户端没有登录页，令牌模式对它没有意义（它不会发送令牌）。因此"生产环境部署"在本项目里指的是 **在可信网络内长期运行**，而不是面向互不信任的多用户公网服务。要对外提供 Web 界面，必须先在外层反向代理接入登录，详见[安全建议](#安全建议)。
 
 ### 使用Docker Compose（单机部署）
 
@@ -183,8 +172,7 @@ chmod 600 .env
 
 #### 4. 可选：调整 compose 的部署参数
 
-`docker-compose.yml` 已经内置了可直接用于长期运行的配置（`restart: unless-stopped`、健康检查、
-内存/CPU 上限、`no-new-privileges`、数据卷挂载）。需要日志轮转时在 backend 服务下新增：
+`docker-compose.yml` 已经内置了可直接用于长期运行的配置（`restart: unless-stopped`、健康检查、内存/CPU 上限、`no-new-privileges`、数据卷挂载）。需要日志轮转时在 backend 服务下新增：
 
 ```yaml
 services:
@@ -208,9 +196,7 @@ curl http://127.0.0.1:8000/health
 
 #### 6. 配置Nginx反向代理（对外提供 Web 界面时）
 
-容器默认只绑回环，对外开放前必须先有带登录的反向代理。前端容器内的 nginx 已经把 `/api` 反代到
-`backend:8000`，并在转发时**剥掉客户端自带的 `x-user-id`**（阻断"自行声明身份冒充他人"）、
-保留 `Authorization` 供令牌模式使用，所以宿主机上只需要反代前端入口：
+容器默认只绑回环，对外开放前必须先有带登录的反向代理。前端容器内的 nginx 已经把 `/api` 反代到 `backend:8000`，并在转发时**剥掉客户端自带的 `x-user-id`**（阻断"自行声明身份冒充他人"）、保留 `Authorization` 供令牌模式使用，所以宿主机上只需要反代前端入口：
 
 ```bash
 sudo apt install nginx -y
@@ -237,8 +223,7 @@ server {
 }
 ```
 
-如果确实要在宿主机 nginx 上再直接反代后端 `/api`，必须自己复刻身份头剥离与 SSE 关闭缓冲，
-否则会绕过前端的保护：
+如果确实要在宿主机 nginx 上再直接反代后端 `/api`，必须自己复刻身份头剥离与 SSE 关闭缓冲，否则会绕过前端的保护：
 
 ```nginx
     location /api/ {
@@ -311,8 +296,7 @@ sudo systemctl start recoach-backend
 sudo systemctl status recoach-backend
 ```
 
-（这种方式下前端需要自己构建并托管：`npm ci && npm run build`，把 `dist/` 交给静态服务器，
-并自行配置 `/api` 反代与身份头剥离。前端的 `Dockerfile` + `nginx.conf` 就是一份可参照的实现。）
+（这种方式下前端需要自己构建并托管：`npm ci && npm run build`，把 `dist/` 交给静态服务器，并自行配置 `/api` 反代与身份头剥离。前端的 `Dockerfile` + `nginx.conf` 就是一份可参照的实现。）
 
 ---
 
@@ -320,8 +304,7 @@ sudo systemctl status recoach-backend
 
 ### 完整配置参考
 
-权威来源是 `recoach-server/.env.example`（每一项都有注释）与 `recoach-server/app/config.py` 的默认值；
-`tools/consistency_audit.py` 会检查两者是否同步。常用项：
+权威来源是 `recoach-server/.env.example`（每一项都有注释）与 `recoach-server/app/config.py` 的默认值； `tools/consistency_audit.py` 会检查两者是否同步。常用项：
 
 ```bash
 # ========== 基础配置 ==========
@@ -392,8 +375,7 @@ RECOACH_TOOL_BUDGET=1
 1. `docker-compose.yml` 的 `environment`（最高，会覆盖下面这一项）
 2. `env_file: ./recoach-server/.env`
 
-所以：应用配置写进 `recoach-server/.env`；只有**容器部署特有**的值（DB 绝对路径、令牌、
-可信网段）才写进 compose 的 `environment`。
+所以：应用配置写进 `recoach-server/.env`；只有**容器部署特有**的值（DB 绝对路径、令牌、可信网段）才写进 compose 的 `environment`。
 
 ### 两个 .env 的分工（容易搞混）
 
@@ -404,8 +386,7 @@ RECOACH_TOOL_BUDGET=1
 | `./.env`（仓库根） | `docker compose` 做变量替换 | 部署参数，如 `RECOACH_BACKEND_PORT` |
 | `./recoach-server/.env` | 应用自身（也被 compose 的 `env_file` 注入容器） | 模型、密钥、限流、鉴权等应用配置 |
 
-判断标准很简单：**"容器里跑的那个进程会读它吗？"**
-会 → `recoach-server/.env`；只是给 compose 拼命令行用的 → 根目录 `.env`。
+判断标准很简单：**"容器里跑的那个进程会读它吗？"** 会 → `recoach-server/.env`；只是给 compose 拼命令行用的 → 根目录 `.env`。
 
 把应用配置写进根 `.env` 不会生效；把端口写成 `recoach-server/.env` 也不会被 compose 读到。
 
@@ -413,8 +394,7 @@ RECOACH_TOOL_BUDGET=1
 
 ## 数据备份
 
-数据库位置取决于启动方式：Docker 部署是宿主机 `./data/recoach.db`（挂载到容器 `/app/data/recoach.db`）；
-本地开发默认是后端目录下的 `./recoach.db`（由 `RECOACH_DB_PATH` 决定）。
+数据库位置取决于启动方式：Docker 部署是宿主机 `./data/recoach.db`（挂载到容器 `/app/data/recoach.db`）；本地开发默认是后端目录下的 `./recoach.db`（由 `RECOACH_DB_PATH` 决定）。
 
 ### 数据库备份
 
@@ -442,8 +422,7 @@ chmod +x /opt/recoach/backup.sh
 echo "0 3 * * * /opt/recoach/backup.sh" | sudo crontab -
 ```
 
-SQLite 启用了 WAL 模式，因此**不要**在服务运行时只复制单一文件后直接回灌；要么先停掉 backend
-再复制（下面的恢复流程就是这么做的），要么同时带上 `-wal` / `-shm`。
+SQLite 启用了 WAL 模式，因此**不要**在服务运行时只复制单一文件后直接回灌；要么先停掉 backend 再复制（下面的恢复流程就是这么做的），要么同时带上 `-wal` / `-shm`。
 
 ### 恢复数据
 
@@ -481,8 +460,7 @@ sudo journalctl -u recoach-backend -f
 docker stats recoach-backend recoach-frontend
 ```
 
-应用内部的运行指标（首字延迟、记忆检索耗时、上下文编译耗时等 p50/p95）通过
-`GET /api/v1/metrics/summary` 获取，Web 界面的 Performance 视图会展示其中一部分。
+应用内部的运行指标（首字延迟、记忆检索耗时、上下文编译耗时等 p50/p95）通过 `GET /api/v1/metrics/summary` 获取，Web 界面的 Performance 视图会展示其中一部分。
 
 ### 健康检查
 
@@ -537,8 +515,7 @@ docker compose up -d
 
 ### 内存不足
 
-`docker-compose.yml` 已经给 backend 设了 `mem_limit: 1g`、前端 256m，需要调整时改这两行。
-注意 Compose 规范下容器用 `mem_limit`，`deploy.resources.limits` 只在 Swarm 模式生效：
+`docker-compose.yml` 已经给 backend 设了 `mem_limit: 1g`、前端 256m，需要调整时改这两行。注意 Compose 规范下容器用 `mem_limit`，`deploy.resources.limits` 只在 Swarm 模式生效：
 
 ```yaml
 services:
@@ -548,8 +525,7 @@ services:
 
 ### 后端端口 8000 起不来（Windows 常见）
 
-Windows 会把一批端口段保留给 Hyper-V / WSL，落在这个范围内的端口**绑不上**，报错形如
-`[WinError 10013] 以一种访问权限不允许的方式做了一个访问套接字的尝试`。8000 在很多机器上恰好在保留段里。
+Windows 会把一批端口段保留给 Hyper-V / WSL，落在这个范围内的端口**绑不上**，报错形如 `[WinError 10013] 以一种访问权限不允许的方式做了一个访问套接字的尝试`。8000 在很多机器上恰好在保留段里。
 
 先确认：
 
@@ -571,9 +547,7 @@ netsh int ipv4 add excludedportrange protocol=tcp startport=8000 numberofports=1
 net start winnat
 ```
 
-注意：这只影响宿主侧端口映射。前端入口 4173 通常不受影响，
-所以**即使不改，`http://127.0.0.1:4173` 依然可以用**——8000 只在需要直接访问
-后端 API（如 `/docs`）时才需要。
+注意：这只影响宿主侧端口映射。前端入口 4173 通常不受影响，所以**即使不改，`http://127.0.0.1:4173` 依然可以用**——8000 只在需要直接访问后端 API（如 `/docs`）时才需要。
 
 ---
 
@@ -581,8 +555,7 @@ net start winnat
 
 ### 访问控制（必读）
 
-Re:Coach 的身份由 `x-user-id` 请求头表达。该头**只在调用方通过鉴权之后才可信**，
-鉴权由 `RECOACH_API_TOKEN` 承担：
+Re:Coach 的身份由 `x-user-id` 请求头表达。该头**只在调用方通过鉴权之后才可信**，鉴权由 `RECOACH_API_TOKEN` 承担：
 
 | `RECOACH_API_TOKEN` | 行为 |
 |---|---|
@@ -595,13 +568,9 @@ Re:Coach 的身份由 `x-user-id` 请求头表达。该头**只在调用方通�
 python -c "import secrets;print(secrets.token_urlsafe(32))"
 ```
 
-令牌模式面向直接调用 API 的可信客户端。当前浏览器界面没有登录页，也不会读取、
-保存或自动附加 `RECOACH_API_TOKEN`；因此只在后端设置令牌，会让浏览器请求全部返回
-`401`。不要把令牌写入 `VITE_*` 或前端镜像，那会把共享密钥公开在浏览器产物中。
+令牌模式面向直接调用 API 的可信客户端。当前浏览器界面没有登录页，也不会读取、保存或自动附加 `RECOACH_API_TOKEN`；因此只在后端设置令牌，会让浏览器请求全部返回 `401`。不要把令牌写入 `VITE_*` 或前端镜像，那会把共享密钥公开在浏览器产物中。
 
-对外提供 Web 界面时，必须在外层反向代理接入登录，并由代理在服务端侧注入 Bearer
-令牌与可信用户身份；同时保持后端端口不可从公网直接访问。没有这层身份代理时，
-只能维持下文的回环地址本地部署。
+对外提供 Web 界面时，必须在外层反向代理接入登录，并由代理在服务端侧注入 Bearer 令牌与可信用户身份；同时保持后端端口不可从公网直接访问。没有这层身份代理时，只能维持下文的回环地址本地部署。
 
 ### 信任边界的真实含义
 
@@ -609,12 +578,9 @@ python -c "import secrets;print(secrets.token_urlsafe(32))"
 
 - 持有令牌的调用方仍然可以自行设置 `x-user-id: <任意值>`，读写该身份下的数据。
 - 因此当前模型适用于**单用户自用**或**全部使用者互相信任**的场景。
-- 若要面向互不信任的多用户，需要在反向代理层接入真实登录（OIDC / 自建账号），
-  把 `user_id` 从"请求头"改为"服务端根据会话推导"，并给每个用户独立凭证。
-  改动点在 `recoach-server/app/auth.py` 与 `app/routes/sessions.py:current_user_id`。
+- 若要面向互不信任的多用户，需要在反向代理层接入真实登录（OIDC / 自建账号），把 `user_id` 从"请求头"改为"服务端根据会话推导"，并给每个用户独立凭证。改动点在 `recoach-server/app/auth.py` 与 `app/routes/sessions.py:current_user_id`。
 
-`/docs` 与 `/openapi.json` 在令牌模式下默认关闭；需要时显式设
-`RECOACH_EXPOSE_DOCS=true`。
+`/docs` 与 `/openapi.json` 在令牌模式下默认关闭；需要时显式设 `RECOACH_EXPOSE_DOCS=true`。
 
 ### 本地自用（单用户）部署要点
 
@@ -633,28 +599,18 @@ backend:
     - RECOACH_TRUSTED_HOSTS=172.28.0.0/24
 ```
 
-**`RECOACH_TRUSTED_HOSTS` 是本地自用的关键一项。** 前端 nginx 反代 `/api` 时，
-后端看到的来源是 nginx 容器的内网 IP（`172.28.0.x`），不属于回环；
-只认回环会让每个 API 调用都返回 `401`。所以 compose 固定了网段
-`172.28.0.0/24` 并在后端显式声明它，两边必须一致。
+**`RECOACH_TRUSTED_HOSTS` 是本地自用的关键一项。** 前端 nginx 反代 `/api` 时，后端看到的来源是 nginx 容器的内网 IP（`172.28.0.x`），不属于回环；只认回环会让每个 API 调用都返回 `401`。所以 compose 固定了网段 `172.28.0.0/24` 并在后端显式声明它，两边必须一致。
 
-> 这两条是**一对**：只绑回环 → 局域网进不来；声明可信网段 → 容器间反代能通。
-> 改任意一条都要同时看另一条。
+> 这两条是**一对**：只绑回环 → 局域网进不来；声明可信网段 → 容器间反代能通。改任意一条都要同时看另一条。
 
-不要只把入口改成 `0.0.0.0:4173` 并设置 `RECOACH_API_TOKEN`：内置 Web 客户端不会发送
-该令牌，结果只会是全部 API 请求 `401`。对外监听前应先配置带登录的外层反向代理，
-由它在服务端侧注入 Bearer 令牌；否则局域网内任何人都能访问完整应用。
+不要只把入口改成 `0.0.0.0:4173` 并设置 `RECOACH_API_TOKEN`：内置 Web 客户端不会发送该令牌，结果只会是全部 API 请求 `401`。对外监听前应先配置带登录的外层反向代理，由它在服务端侧注入 Bearer 令牌；否则局域网内任何人都能访问完整应用。
 
 ### 限流与资源上限
 
-- `RECOACH_RATE_LIMIT_PER_MINUTE`（默认 30）：每身份每分钟的计费型请求数上限。
-  仅作用于会真实调用 LLM 的端点（创建 Turn 与创建 Fork）；完成态重放与 409 冲突不消耗配额。
-  超限返回 `429`。
-- `RECOACH_MAX_CONCURRENT_TURNS`（默认 16）：同时进行中的流式 Turn 上限。
-  超限返回 `503 SERVICE_BUSY`。挡住"开大量 SSE 不读响应"的资源耗尽。
+- `RECOACH_RATE_LIMIT_PER_MINUTE`（默认 30）：每身份每分钟的计费型请求数上限。仅作用于会真实调用 LLM 的端点（创建 Turn 与创建 Fork）；完成态重放与 409 冲突不消耗配额。超限返回 `429`。
+- `RECOACH_MAX_CONCURRENT_TURNS`（默认 16）：同时进行中的流式 Turn 上限。超限返回 `503 SERVICE_BUSY`。挡住"开大量 SSE 不读响应"的资源耗尽。
 - `RECOACH_MAX_BODY_BYTES`（默认 65536）：请求体大小上限，超限返回 `413`。
-- 以上计数都在进程内存中，**多副本部署时每个副本各算一份**。需要严格全局配额
-  时应换成 Redis 等共享后端。
+- 以上计数都在进程内存中，**多副本部署时每个副本各算一份**。需要严格全局配额时应换成 Redis 等共享后端。
 
 ### 其他
 
@@ -670,13 +626,9 @@ backend:
      sh -c "pip install -q -r requirements.txt && pip freeze" > requirements.lock.txt
    ```
 
-   > 曾经踩过的坑：该锁文件最初是在 Python 3.13 上生成的，其中的
-   > `websockets==17.0.1` 要求 `Python>=3.11`，而镜像是 3.10，
-   > 导致 `docker-compose build` 直接失败。锁文件只有在被真正安装时才暴露问题——
-   > 之前它一直没被镜像使用，所以这个不兼容潜伏了很久。
+   > 曾经踩过的坑：该锁文件最初是在 Python 3.13 上生成的，其中的 `websockets==17.0.1` 要求 `Python>=3.11`，而镜像是 3.10，导致 `docker-compose build` 直接失败。锁文件只有在被真正安装时才暴露问题—— 之前它一直没被镜像使用，所以这个不兼容潜伏了很久。
 6. **监控日志** - 设置日志告警
-7. **防火墙** - 只开放必要的端口（80、443）。后端 8000 在 compose 中只绑定
-   `127.0.0.1`，不要改回 `0.0.0.0`——那会绕过 nginx 的身份头剥离
+7. **防火墙** - 只开放必要的端口（80、443）。后端 8000 在 compose 中只绑定 `127.0.0.1`，不要改回 `0.0.0.0`——那会绕过 nginx 的身份头剥离
 
 ---
 
@@ -684,8 +636,7 @@ backend:
 
 ### 当前实现
 
-- 存储是 SQLite（WAL + FTS5，FTS5 不可用时降级到 LIKE），单写入者、本地文件，
-  适合单实例单用户场景；`GET /api/v1/metrics/summary` 提供 p50/p95 运行指标。
+- 存储是 SQLite（WAL + FTS5，FTS5 不可用时降级到 LIKE），单写入者、本地文件，适合单实例单用户场景；`GET /api/v1/metrics/summary` 提供 p50/p95 运行指标。
 - 限流与并发闸门都在进程内存中，因此**不能靠多副本水平扩容获得全局配额**。
 
 ### 尚未实现（提升容量前需要先做的工作）

@@ -3,6 +3,7 @@
 > 面向机器学习与深度学习学习场景的个性化讲解 Agent 的服务端。
 
 **技术栈：** FastAPI + SQLite + SSE + 评测接口
+
 **核心原则：** 先把问题弄清楚，再检索相关记忆；少调用、低延迟、自动记忆、作用域明确。
 
 ---
@@ -36,8 +37,7 @@
 - 开发身份来自受信头 `X-User-Id` 或 `RECOACH_DEV_USER`；JSON body 不接受 `user_id`。
 - Turn 会验证 Session 归属；不存在和越权统一返回 `404 SESSION_NOT_FOUND`。
 - 请求校验失败统一返回 `422 {error:{code:"INVALID_REQUEST", ...}}`。
-- `x-user-id` 只在调用方通过鉴权后才可信：令牌模式校验 `RECOACH_API_TOKEN`，
-  未配置令牌时进入开发模式（只接受本机回环客户端）。
+- `x-user-id` 只在调用方通过鉴权后才可信：令牌模式校验 `RECOACH_API_TOKEN`，未配置令牌时进入开发模式（只接受本机回环客户端）。
 
 ### 在线链路
 
@@ -80,16 +80,14 @@
 
 ### 请求保护
 
-- `RECOACH_RATE_LIMIT_PER_MINUTE`：每身份每分钟计费型请求上限，超限返回 `429`（附 `retry-after`）。
-  完成态重放与 409 冲突不消耗配额。
+- `RECOACH_RATE_LIMIT_PER_MINUTE`：每身份每分钟计费型请求上限，超限返回 `429`（附 `retry-after`）。完成态重放与 409 冲突不消耗配额。
 - `RECOACH_MAX_CONCURRENT_TURNS`：并发的流式 Turn 上限，超限返回 `503 SERVICE_BUSY`。
 - `RECOACH_MAX_BODY_BYTES`：请求体上限，按实际收到的字节数复核（不信任 `Content-Length`），超限返回 `413`。
 - 以上计数都在进程内存中，多副本部署时各算一份。
 
 ### 自动化验证
 
-当前后端测试共 **18 个测试文件、217 条用例**（`pytest -q` 实测 `217 passed`；其中 165 个测试函数经
-`@pytest.mark.parametrize` 展开），覆盖：
+当前后端测试共 **18 个测试文件、217 条用例**（`pytest -q` 实测 `217 passed`；其中 165 个测试函数经 `@pytest.mark.parametrize` 展开），覆盖：
 
 - Session/SSE 基础契约与唯一终止事件；
 - canonical 文本一致与失败重试幂等；
@@ -103,9 +101,7 @@
 - 服务端默认记忆策略、请求级 `memoryMode` 返回 422、旧幂等记录重放兼容、Fair Fork 分支模式固定与 Off 分支零个性化、fork 创建原子性；
 - provider 失败分类、降级披露与 `RECOACH_LLM_FAIL_FAST` 行为。
 
-跨文件一致性另有 `tools/consistency_audit.py`（在仓库根目录运行）：核对 `config.py` 的 30 个配置字段
-是否全部在 `.env.example` 有说明且默认值一致、错误码是否被前端硬编码、后端 Metrics 字段是否同步到
-前端与 TUI 类型、是否残留调试输出。
+跨文件一致性另有 `tools/consistency_audit.py`（在仓库根目录运行）：核对 `config.py` 的 30 个配置字段是否全部在 `.env.example` 有说明且默认值一致、错误码是否被前端硬编码、后端 Metrics 字段是否同步到前端与 TUI 类型、是否残留调试输出。
 
 ## 3. 环境要求
 
@@ -135,15 +131,10 @@ python -m pip install -r requirements.txt
 
 ### `requirements.lock.txt` 只用于镜像，不要在 Windows 上装它
 
-`requirements.lock.txt` 是**给 Linux 镜像用的**锁文件：它由 `python:3.10-slim` 里的 `pip freeze` 生成，
-而 `pip freeze` 不保留环境标记，解析平台专属的依赖会被写成无条件依赖——第 41 行 `uvloop==0.22.1`
-只支持 Linux/macOS，在 Windows 上会因源码编译失败而中断整条安装
-（`RuntimeError: uvloop does not support Windows at the moment`）。
+`requirements.lock.txt` 是**给 Linux 镜像用的**锁文件：它由 `python:3.10-slim` 里的 `pip freeze` 生成，而 `pip freeze` 不保留环境标记，解析平台专属的依赖会被写成无条件依赖——第 41 行 `uvloop==0.22.1` 只支持 Linux/macOS，在 Windows 上会因源码编译失败而中断整条安装（`RuntimeError: uvloop does not support Windows at the moment`）。
 
-- **Windows 本地开发**：装 `requirements.txt`。`uvicorn[standard]` 自带
-  `sys_platform != 'win32'` 标记，在 Windows 上不会选中 uvloop（已实测通过）。
-- **镜像构建**：继续用 `requirements.lock.txt`，保证与镜像环境一致。改依赖后必须重新生成
-  （见[部署指南](../docs/deployment.md#其他)），且必须用与镜像相同版本的 Python 解析。
+- **Windows 本地开发**：装 `requirements.txt`。`uvicorn[standard]` 自带 `sys_platform != 'win32'` 标记，在 Windows 上不会选中 uvloop（已实测通过）。
+- **镜像构建**：继续用 `requirements.lock.txt`，保证与镜像环境一致。改依赖后必须重新生成（见[部署指南](../docs/deployment.md#其他)），且必须用与镜像相同版本的 Python 解析。
 
 要跨平台复现同一套版本，需要保留环境标记的锁文件，或按平台各生成一份——`pip freeze` 做不到这两点。
 
@@ -172,9 +163,7 @@ RECOACH_DEEPSEEK_THINKING=enabled
 RECOACH_DEEPSEEK_REASONING_EFFORT=low
 ```
 
-支持四种主模型提供方：`template`（默认，无 key）、`openai_compatible`、`deepseek`、`anthropic`。
-`RECOACH_DEEPSEEK_REASONING_EFFORT` 的代码默认值是 `medium`，`.env.example` 有意推荐 `low`
-（附实测延迟数据）；详细取舍见 [LLM 配置指南](README_LLM_CONFIG.md)。
+支持四种主模型提供方：`template`（默认，无 key）、`openai_compatible`、`deepseek`、`anthropic`。 `RECOACH_DEEPSEEK_REASONING_EFFORT` 的代码默认值是 `medium`，`.env.example` 有意推荐 `low` （附实测延迟数据）；详细取舍见 [LLM 配置指南](README_LLM_CONFIG.md)。
 
 不要把 API key 放入前端的 `VITE_*` 变量——`VITE_*` 会进入浏览器产物。
 
@@ -225,8 +214,7 @@ API 文档：`http://127.0.0.1:8000/docs`。
 
 - `microExperiment`：受限 Python/NumPy 微型实验工具未实现；
 - `complexFeedbackDistillation`：复杂、多意图反馈的回答后异步 LLM 蒸馏未实现；
-- `sessionRecoveryApi`：按 `turnId` 查询单轮的接口与断线恢复重连未实现（会话级历史恢复已可用，见
-  `GET /api/v1/sessions/{sessionId}/turns`）；
+- `sessionRecoveryApi`：按 `turnId` 查询单轮的接口与断线恢复重连未实现（会话级历史恢复已可用，见 `GET /api/v1/sessions/{sessionId}/turns`）；
 - 记忆召回率、选择精度和错误泛化率等质量指标：尚无评测真值，暂不输出；运行指标 p50/p95 已通过 `metricsSummary` 提供。
 - `supermemorySync`：Supermemory 异步同步适配器未实现。
 

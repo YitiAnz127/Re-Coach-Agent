@@ -1,7 +1,6 @@
 # AI Coach
 
 > **An AI skill for long-term human–AI collaboration and mutual learning.**
->
 > AI Coach is designed not only to help an AI complete tasks better, but to help humans and AI develop better ways of understanding, reasoning, deciding, and collaborating together.
 
 [中文版 README](README.md)
@@ -293,10 +292,7 @@ The goal is to make the user increasingly capable of solving complex problems wi
 | Codex | `skills/Codex/SKILL.md` |
 | Claude Desktop | `skills/Claude Desktop/SKILL.md` |
 
-The three files are **byte-for-byte identical** — three copies of the same SKILL.md sharing one core
-design. They are kept separate only because each platform installs and loads Skills / Instructions from a
-different location. The repository contains no executable code, and Re: Coach's other parts never
-reference it.
+The three files are **byte-for-byte identical** — three copies of the same SKILL.md sharing one core design. They are kept separate only because each platform installs and loads Skills / Instructions from a different location. The repository contains no executable code, and Re: Coach's other parts never reference it.
 
 ## Installation
 

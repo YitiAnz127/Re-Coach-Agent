@@ -29,8 +29,7 @@
 | `anthropic` | Anthropic 官方 Claude API | `RECOACH_ANTHROPIC_*` |
 | `template` | 不调用外部模型，用于本地协议和界面联调 | 无需 key |
 
-一次只选择一个 provider。未配置、配置不完整或首字输出前远端调用失败时，系统会安全回退到 `template`
-（除非显式设置 `RECOACH_LLM_FAIL_FAST=true`，见第 9 节）。
+一次只选择一个 provider。未配置、配置不完整或首字输出前远端调用失败时，系统会安全回退到 `template` （除非显式设置 `RECOACH_LLM_FAIL_FAST=true`，见第 9 节）。
 
 ---
 
@@ -45,9 +44,7 @@ uv venv --python 3.11 .venv
 uv pip install --python .venv -r requirements.txt
 ```
 
-> 本地开发装 `requirements.txt`，**不要**装 `requirements.lock.txt`：锁文件由 Linux 的 `pip freeze`
-> 生成、不保留环境标记，其中的 `uvloop` 只支持 Linux/macOS，在 Windows 上会编译失败并中断整条安装。
-> 锁文件用于镜像构建。
+> 本地开发装 `requirements.txt`，**不要**装 `requirements.lock.txt`：锁文件由 Linux 的 `pip freeze` 生成、不保留环境标记，其中的 `uvloop` 只支持 Linux/macOS，在 Windows 上会编译失败并中断整条安装。锁文件用于镜像构建。
 
 ### Windows PowerShell（标准库）
 
@@ -112,8 +109,7 @@ RECOACH_LLM_MAX_CONTINUATIONS=2
 
 ### `RECOACH_DEEPSEEK_REASONING_EFFORT` 怎么选
 
-代码默认值是 `medium`，但 `.env.example` **有意推荐 `low`**，并在注释里附了实测数据
-（`tools/consistency_audit.py` 把这条非默认值登记为有意偏离，避免被当成配置漂移）：
+代码默认值是 `medium`，但 `.env.example` **有意推荐 `low`**，并在注释里附了实测数据（`tools/consistency_audit.py` 把这条非默认值登记为有意偏离，避免被当成配置漂移）：
 
 | 档位 | 首字延迟 | 端到端 | thinking 量级 | 适用 |
 |---|---|---|---|---|
@@ -286,8 +282,7 @@ Provider 名称必须全部小写，并与上述值完全一致。
 
 ## 9. 验证真实模型调用
 
-本仓库**不提供**独立的模型自检脚本。要确认真实模型是否生效，用下面两步，都能从现有接口读出结果，
-且不会打印任何密钥内容。
+本仓库**不提供**独立的模型自检脚本。要确认真实模型是否生效，用下面两步，都能从现有接口读出结果，且不会打印任何密钥内容。
 
 ### 第 1 步：确认配置被后端识别
 
@@ -309,15 +304,13 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/meta
 ```
 
 - `configured` 为 `false` 且 `provider` 是 `template`，说明配置没被读到。
-- `keysPresent` 只暴露"某 provider 是否配了密钥"的布尔值，**从不暴露密钥内容**。它的用途是识别
-  最常见的配置失误：密钥已填但 `RECOACH_LLM_PROVIDER` 忘了切换——此时应用会一直安静地走模板。
+- `keysPresent` 只暴露"某 provider 是否配了密钥"的布尔值，**从不暴露密钥内容**。它的用途是识别最常见的配置失误：密钥已填但 `RECOACH_LLM_PROVIDER` 忘了切换——此时应用会一直安静地走模板。
 
 注意：`/meta` 只证明配置被识别，**不证明远端调用成功**。
 
 ### 第 2 步：发一轮真实对话，看本轮实际 provider
 
-新建一个 Session 并发一条消息，然后检查 `turn.completed` 事件里
-`presentation.metrics` 的这几个字段：
+新建一个 Session 并发一条消息，然后检查 `turn.completed` 事件里 `presentation.metrics` 的这几个字段：
 
 | 字段 | 含义 |
 |---|---|
@@ -325,12 +318,9 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/meta
 | `fallback` | 本轮是否发生了模板降级 |
 | `fallbackReason` | 降级的粗粒度原因：`AUTH` / `QUOTA` / `TIMEOUT` / `NETWORK` / `PROVIDER_ERROR` / `HTTP_ERROR` / `ERROR` |
 
-判断标准是这两个字段，**不是** `/meta` 里的配置值：配置了真 key 但鉴权失败时，`/meta` 依然显示
-`deepseek`，而 `metrics.provider` 会是 `template`、`fallback` 为 `true`。Web 界面的 Performance 视图
-展示的就是这两个字段（`ModelBadge` 与侧栏都刻意不从 `/meta` 取值）。
+判断标准是这两个字段，**不是** `/meta` 里的配置值：配置了真 key 但鉴权失败时，`/meta` 依然显示 `deepseek`，而 `metrics.provider` 会是 `template`、`fallback` 为 `true`。Web 界面的 Performance 视图展示的就是这两个字段（`ModelBadge` 与侧栏都刻意不从 `/meta` 取值）。
 
-`fallbackReason=AUTH` 说明密钥无效、过期或无权限；`NETWORK` 说明连不上 Base URL；
-`HTTP_ERROR` 通常是模型名或接口地址写错。
+`fallbackReason=AUTH` 说明密钥无效、过期或无权限；`NETWORK` 说明连不上 Base URL； `HTTP_ERROR` 通常是模型名或接口地址写错。
 
 ### 如果想让失败立刻可见
 
@@ -340,9 +330,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/meta
 RECOACH_LLM_FAIL_FAST=true
 ```
 
-此时 provider 在首字前失败不再降级为模板，而是直接以 `MODEL_UNAVAILABLE` 结束本轮，
-并附带按 `fallbackReason` 生成的、可操作的提示（不含异常原文、URL、响应体或密钥）。
-两种模式都会如实告知用户，区别只是"给个兜底回答"还是"直接报错"。
+此时 provider 在首字前失败不再降级为模板，而是直接以 `MODEL_UNAVAILABLE` 结束本轮，并附带按 `fallbackReason` 生成的、可操作的提示（不含异常原文、URL、响应体或密钥）。两种模式都会如实告知用户，区别只是"给个兜底回答"还是"直接报错"。
 
 ### 排查清单
 
@@ -380,8 +368,7 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/meta
 ```
 
-注意：`/meta` 只能证明配置被后端识别。是否能成功调用远端模型，仍应以第 9 节第 2 步的
-`metrics.provider` 与 `metrics.fallback` 为准。
+注意：`/meta` 只能证明配置被后端识别。是否能成功调用远端模型，仍应以第 9 节第 2 步的 `metrics.provider` 与 `metrics.fallback` 为准。
 
 ---
 
@@ -401,9 +388,7 @@ npm run dev
 http://127.0.0.1:4173
 ```
 
-前端默认就是连真实后端：`VITE_API_BASE_URL` 缺省为同源 `/api/v1`（开发时由 Vite 代理到
-`http://127.0.0.1:8000`），`VITE_DEMO_MODE` 缺省为关闭。仓库**不提供**前端 `.env.example`；
-需要覆盖时自建 `.env.local`，例如：
+前端默认就是连真实后端：`VITE_API_BASE_URL` 缺省为同源 `/api/v1`（开发时由 Vite 代理到 `http://127.0.0.1:8000`），`VITE_DEMO_MODE` 缺省为关闭。仓库**不提供**前端 `.env.example`；需要覆盖时自建 `.env.local`，例如：
 
 ```env
 VITE_DEMO_MODE=false
@@ -453,8 +438,7 @@ $env:RECOACH_BACKEND_URL='http://127.0.0.1:8000'
 npm run smoke
 ```
 
-Smoke 测试主要验证 Re: Coach 前后端连接，不替代真实模型调用验证。真实模型是否生效请用第 9 节的
-`metrics.provider` / `metrics.fallback` 判断。
+Smoke 测试主要验证 Re: Coach 前后端连接，不替代真实模型调用验证。真实模型是否生效请用第 9 节的 `metrics.provider` / `metrics.fallback` 判断。
 
 ---
 

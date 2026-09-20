@@ -4,8 +4,7 @@
 
 > 面向机器学习与深度学习学习场景的个性化知识讲解与人机复盘 Agent
 
-[![Tests](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Tests](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **版本：** v1.1.0（phase `p1`，策略版本 `policy_1.1.0`）——取自运行时 `GET /api/v1/meta`
 
@@ -31,12 +30,9 @@ docker compose up -d
 # 健康检查: http://127.0.0.1:8000/health
 ```
 
-`docker-compose.yml` 把两个端口都绑定在回环地址上（`127.0.0.1`），默认只允许本机访问。
-这是有意的默认值：内置 Web 客户端不持有访问令牌，把入口改到 `0.0.0.0` 前请先读
-[部署指南的访问控制章节](docs/deployment.md#访问控制必读)。
+`docker-compose.yml` 把两个端口都绑定在回环地址上（`127.0.0.1`），默认只允许本机访问。这是有意的默认值：内置 Web 客户端不持有访问令牌，把入口改到 `0.0.0.0` 前请先读 [部署指南的访问控制章节](docs/deployment.md#访问控制必读)。
 
-默认 `RECOACH_LLM_PROVIDER=template`，无需模型密钥即可跑通完整协议与记忆闭环。要得到真实学科讲解，
-把你的密钥写进 `recoach-server/.env`（应用配置只从那里读，不要写进 compose 的 `environment`）：
+默认 `RECOACH_LLM_PROVIDER=template`，无需模型密钥即可跑通完整协议与记忆闭环。要得到真实学科讲解，把你的密钥写进 `recoach-server/.env`（应用配置只从那里读，不要写进 compose 的 `environment`）：
 
 ```bash
 cp recoach-server/.env.example recoach-server/.env
@@ -56,8 +52,7 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-> 本地开发装 `requirements.txt`，**不要**装 `requirements.lock.txt`：锁文件由 Linux 的 `pip freeze`
-> 生成、不保留环境标记，其中的 `uvloop` 在 Windows 上无法编译，会让整条安装失败。锁文件是给镜像用的。
+> 本地开发装 `requirements.txt`，**不要**装 `requirements.lock.txt`：锁文件由 Linux 的 `pip freeze` 生成、不保留环境标记，其中的 `uvloop` 在 Windows 上无法编译，会让整条安装失败。锁文件是给镜像用的。
 
 ```bash
 # 前端（在前端项目根目录执行）
@@ -65,9 +60,7 @@ npm ci
 npm run dev        # http://127.0.0.1:4173；/api 由 Vite 代理到 127.0.0.1:8000
 ```
 
-前端默认就是连真实后端（`VITE_API_BASE_URL` 缺省为同源 `/api/v1`），仓库**没有**提供前端
-`.env.example`；只有需要脱机演示时才自建 `.env.local` 写 `VITE_DEMO_MODE=true`。
-macOS / Linux 把上面的 PowerShell 命令换成等价的 `python3 -m venv` / `source .venv/bin/activate`。
+前端默认就是连真实后端（`VITE_API_BASE_URL` 缺省为同源 `/api/v1`），仓库**没有**提供前端 `.env.example`；只有需要脱机演示时才自建 `.env.local` 写 `VITE_DEMO_MODE=true`。 macOS / Linux 把上面的 PowerShell 命令换成等价的 `python3 -m venv` / `source .venv/bin/activate`。
 
 **TUI（终端版）**：`re-coach-tui/` 是独立应用，不依赖 `recoach-server`：
 
@@ -173,23 +166,17 @@ cd recoach-frontend && npm test
 cd re-coach-tui && npm test
 ```
 
-> 数字为本机实测结果（Python 3.11 / Node 24）。后端 165 个测试函数经
-> `@pytest.mark.parametrize` 展开后是 217 条用例，TUI 的 `it.each` 同理（64 → 92）。
-> CI 目前只跑后端与前端两个 job
-> （[.github/workflows/test.yml](.github/workflows/test.yml)），TUI 测试尚未接入 CI。
+> 数字为本机实测结果（Python 3.11 / Node 24）。后端 165 个测试函数经 `@pytest.mark.parametrize` 展开后是 217 条用例，TUI 的 `it.each` 同理（64 → 92）。 CI 目前只跑后端与前端两个 job （[.github/workflows/test.yml](.github/workflows/test.yml)），TUI 测试尚未接入 CI。
 
 ### 跨文件一致性审计
 
-改完配置项或接口字段后跑一遍，能发现单看某个文件看不出来的问题
-（配置项加了却忘了写进 `.env.example`、后端加了字段却忘了同步前端类型、
-代码里残留调试输出等）：
+改完配置项或接口字段后跑一遍，能发现单看某个文件看不出来的问题（配置项加了却忘了写进 `.env.example`、后端加了字段却忘了同步前端类型、代码里残留调试输出等）：
 
 ```bash
 python tools/consistency_audit.py
 ```
 
-退出码 0 表示全部通过，可直接接入 CI。脚本会自行定位仓库位置，
-在任意目录下运行都可以；TUI 在本仓库顶层或在同级独立目录时都会被一并检查。
+退出码 0 表示全部通过，可直接接入 CI。脚本会自行定位仓库位置，在任意目录下运行都可以；TUI 在本仓库顶层或在同级独立目录时都会被一并检查。
 
 ---
 

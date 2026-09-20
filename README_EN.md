@@ -4,8 +4,7 @@
 
 > A personalized knowledge-explanation and retrospection agent for machine learning & deep learning learning scenarios.
 
-[![Tests](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Tests](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Version:** v1.1.0 (phase `p1`, policy version `policy_1.1.0`) — read from the running `GET /api/v1/meta`
 
@@ -31,14 +30,9 @@ docker compose up -d
 # Health check: http://127.0.0.1:8000/health
 ```
 
-`docker-compose.yml` binds both ports to loopback (`127.0.0.1`), so only the local machine can reach
-them by default. That is deliberate: the bundled web client holds no access token, so read the
-[access-control section of the deployment guide](docs/deployment.en.md#access-control-required-reading)
-before moving the entry point to `0.0.0.0`.
+`docker-compose.yml` binds both ports to loopback (`127.0.0.1`), so only the local machine can reach them by default. That is deliberate: the bundled web client holds no access token, so read the [access-control section of the deployment guide](docs/deployment.en.md#access-control-required-reading) before moving the entry point to `0.0.0.0`.
 
-The default is `RECOACH_LLM_PROVIDER=template`, which needs no model key and still exercises the full
-protocol and memory loop. To get real subject-matter explanations, put your key in
-`recoach-server/.env` (application config is read only from there — never from Compose `environment`):
+The default is `RECOACH_LLM_PROVIDER=template`, which needs no model key and still exercises the full protocol and memory loop. To get real subject-matter explanations, put your key in `recoach-server/.env` (application config is read only from there — never from Compose `environment`):
 
 ```bash
 cp recoach-server/.env.example recoach-server/.env
@@ -58,9 +52,7 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-> Install `requirements.txt` locally, **not** `requirements.lock.txt`: the lock file is produced by Linux
-> `pip freeze`, which drops environment markers, and its `uvloop` pin cannot compile on Windows — that
-> aborts the whole install. The lock file is for the image.
+> Install `requirements.txt` locally, **not** `requirements.lock.txt`: the lock file is produced by Linux `pip freeze`, which drops environment markers, and its `uvloop` pin cannot compile on Windows — that aborts the whole install. The lock file is for the image.
 
 ```bash
 # Frontend (run from the frontend project root)
@@ -68,10 +60,7 @@ npm ci
 npm run dev        # http://127.0.0.1:4173; /api is proxied to 127.0.0.1:8000 by Vite
 ```
 
-The frontend connects to the real backend by default (`VITE_API_BASE_URL` defaults to the same-origin
-`/api/v1`), and the repo ships **no** frontend `.env.example`; create `.env.local` with
-`VITE_DEMO_MODE=true` only when you want the offline demo. On macOS / Linux replace the PowerShell
-commands with the equivalent `python3 -m venv` / `source .venv/bin/activate`.
+The frontend connects to the real backend by default (`VITE_API_BASE_URL` defaults to the same-origin `/api/v1`), and the repo ships **no** frontend `.env.example`; create `.env.local` with `VITE_DEMO_MODE=true` only when you want the offline demo. On macOS / Linux replace the PowerShell commands with the equivalent `python3 -m venv` / `source .venv/bin/activate`.
 
 **TUI (terminal edition)**: `re-coach-tui/` is a standalone application that does not depend on `recoach-server`:
 
@@ -177,24 +166,17 @@ cd recoach-frontend && npm test
 cd re-coach-tui && npm test
 ```
 
-> These are measured results (Python 3.11 / Node 24). The backend's 165 test functions expand to 217
-> cases through `@pytest.mark.parametrize`, and the TUI's `it.each` does the same (64 → 92). CI currently
-> runs only the backend and
-> frontend jobs ([.github/workflows/test.yml](.github/workflows/test.yml)); the TUI suite is not wired into CI yet.
+> These are measured results (Python 3.11 / Node 24). The backend's 165 test functions expand to 217 cases through `@pytest.mark.parametrize`, and the TUI's `it.each` does the same (64 → 92). CI currently runs only the backend and frontend jobs ([.github/workflows/test.yml](.github/workflows/test.yml)); the TUI suite is not wired into CI yet.
 
 ### Cross-file consistency audit
 
-Run this after changing configuration keys or API fields — it catches problems no single file reveals
-(a config key added but never documented in `.env.example`, a backend field missing from the frontend
-types, leftover debug output, and so on):
+Run this after changing configuration keys or API fields — it catches problems no single file reveals (a config key added but never documented in `.env.example`, a backend field missing from the frontend types, leftover debug output, and so on):
 
 ```bash
 python tools/consistency_audit.py
 ```
 
-Exit code 0 means everything passed, so it is safe to wire into CI. The script locates the repository
-itself and can be run from any directory; the TUI is checked both when it sits at the repository root
-and when it lives in a sibling directory.
+Exit code 0 means everything passed, so it is safe to wire into CI. The script locates the repository itself and can be run from any directory; the TUI is checked both when it sits at the repository root and when it lives in a sibling directory.
 
 ---
 

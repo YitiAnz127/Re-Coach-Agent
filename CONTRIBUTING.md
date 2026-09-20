@@ -51,13 +51,11 @@ npm test
 npm run typecheck
 ```
 
-所有测试必须通过才能合并。CI 目前跑后端与前端两个 job，
-TUI 测试请在本地手动执行（见 `.github/workflows/test.yml`）。
+所有测试必须通过才能合并。CI 目前跑后端与前端两个 job， TUI 测试请在本地手动执行（见 `.github/workflows/test.yml`）。
 
 ## 改动配置或接口字段后
 
-这类问题单看一个文件发现不了：配置项加了却忘了同步 `.env.example`、
-后端字段加了却忘了同步前端类型、残留调试输出等。改完跑一遍审计脚本：
+这类问题单看一个文件发现不了：配置项加了却忘了同步 `.env.example`、后端字段加了却忘了同步前端类型、残留调试输出等。改完跑一遍审计脚本：
 
 ```bash
 python tools/consistency_audit.py
@@ -67,10 +65,8 @@ python tools/consistency_audit.py
 
 另外两条约定：
 
-- 新增 `RECOACH_*` 配置项时，必须同时写进 `recoach-server/.env.example`；若有意推荐非默认值，
-  需在 `tools/consistency_audit.py` 的 `INTENTIONAL_DIVERGENCE` 中登记理由。
-- 应用配置（模型、密钥、限流、记忆开关）只放 `recoach-server/.env`，
-  不要写进 `docker-compose.yml` 的 `environment`——那里优先级更高，会静默覆盖用户的 `.env`。
+- 新增 `RECOACH_*` 配置项时，必须同时写进 `recoach-server/.env.example`；若有意推荐非默认值，需在 `tools/consistency_audit.py` 的 `INTENTIONAL_DIVERGENCE` 中登记理由。
+- 应用配置（模型、密钥、限流、记忆开关）只放 `recoach-server/.env`，不要写进 `docker-compose.yml` 的 `environment`——那里优先级更高，会静默覆盖用户的 `.env`。
 
 ## 问题报告
 

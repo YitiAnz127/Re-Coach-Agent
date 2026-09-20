@@ -47,8 +47,7 @@ set RECOACH_LLM_MAX_TOKENS=10000
 
 数据默认存于 `~/.recoach/store.json`（可用 `RECOACH_DATA_DIR` 覆盖）。
 
-`RECOACH_*` 环境变量名与后端 `app/config.py` 对齐。`RECOACH_DEV_USER` 默认为 `dev_user`；
-`RECOACH_DEEPSEEK_REASONING_EFFORT` 在 TUI 中默认为 `medium`。
+`RECOACH_*` 环境变量名与后端 `app/config.py` 对齐。`RECOACH_DEV_USER` 默认为 `dev_user`； `RECOACH_DEEPSEEK_REASONING_EFFORT` 在 TUI 中默认为 `medium`。
 
 ## 测试
 
@@ -57,8 +56,7 @@ npm test        # vitest 单元测试：6 个测试文件 / 92 个用例（实�
 npm run typecheck
 ```
 
-测试覆盖澄清门控、作用域记忆、确定性编译、完整 Turn 流水线，以及行为对齐与加固回归。
-注意：TUI 测试尚未接入 CI（`.github/workflows/test.yml` 目前只跑后端与前端）。
+测试覆盖澄清门控、作用域记忆、确定性编译、完整 Turn 流水线，以及行为对齐与加固回归。注意：TUI 测试尚未接入 CI（`.github/workflows/test.yml` 目前只跑后端与前端）。
 
 ## 与后端逻辑对齐
 
