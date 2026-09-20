@@ -1,136 +1,199 @@
 # Re:Coach 项目结构说明
 
-本文档说明项目的目录结构和文件组织。
+本文档说明项目的目录结构和文件组织。所有内容与仓库当前状态一致。
 
 ## 根目录
 
 ```
-Re_Coach_GitHub/
-├── README.md                    # 项目主文档
-├── LICENSE                      # MIT许可证
-├── CONTRIBUTING.md              # 贡献指南
+Re-Coach-Agent/
+├── README.md                    # 项目主文档（中文）
+├── README_EN.md                 # 项目主文档（英文）
 ├── PROJECT_STRUCTURE.md         # 本文档
-├── docker-compose.yml           # Docker编排配置
-├── .gitignore                   # Git忽略规则
+├── CONTRIBUTING.md              # 贡献指南
+├── LICENSE                      # MIT 许可证
+├── docker-compose.yml           # Docker 编排（前后端，均只绑回环）
+├── .gitignore                   # Git 忽略规则
 │
-├── .github/                     # GitHub配置
+├── .github/
 │   └── workflows/
-│       └── test.yml            # CI/CD自动化测试
+│       └── test.yml            # CI：后端测试+一致性审计 / 前端类型检查+测试 / 镜像构建
 │
-├── docs/                        # 文档目录
-│   ├── quickstart.md           # 快速开始指南
-│   └── deployment.md           # 部署指南
+├── docs/                        # 中英双语指南
+│   ├── quickstart.md           # 快速开始（中文）
+│   ├── quickstart.en.md        # 快速开始（英文）
+│   ├── deployment.md           # 部署指南（中文）
+│   └── deployment.en.md        # 部署指南（英文）
 │
-├── recoach-frontend/            # 前端项目
-│   ├── Dockerfile              # 前端Docker镜像
-│   ├── package.json            # 依赖配置
-│   ├── vite.config.ts          # Vite配置
-│   ├── tsconfig.json           # TypeScript配置
-│   ├── index.html              # 入口HTML
-│   ├── src/                    # 源代码
-│   │   ├── App.tsx            # 主应用组件
-│   │   ├── components/        # React组件
-│   │   ├── services/          # API服务
-│   │   └── types.ts           # 类型定义
-│   └── tests/                  # 测试文件
+├── tools/
+│   └── consistency_audit.py     # 跨文件一致性审计（配置项/错误码/类型/代码卫生）
 │
-└── recoach-server/              # 后端项目
-    ├── Dockerfile              # 后端Docker镜像
-    ├── requirements.txt        # Python依赖
-    ├── .env.example           # 环境变量示例
-    ├── pytest.ini             # 测试配置
-    ├── app/                    # 应用代码
-    │   ├── main.py            # FastAPI入口
-    │   ├── config.py          # 配置管理
-    │   ├── db.py              # 数据库
-    │   ├── routes/            # API路由
-    │   └── services/          # 业务逻辑
-    └── tests/                  # 测试文件
+├── recoach-server/              # 后端（FastAPI + SQLite）
+├── recoach-frontend/            # Web 前端（React + Vite）
+├── re-coach-tui/                # 终端 TUI（独立应用，不依赖后端）
+└── ai-coach-skill-repo/         # AI Coach Skill（行为层，无代码耦合）
 ```
 
 ## 运行时目录
 
-运行时会生成以下目录（已在.gitignore中）：
+运行时会生成以下目录（均已在 `.gitignore` 中）：
 
 ```
-data/                            # 数据存储
-└── recoach.db                  # SQLite数据库
+data/                            # Docker 部署的数据库挂载点
+└── recoach.db                  # SQLite 数据库（WAL 模式）
 
+recoach-server/recoach.db        # 本地开发默认路径（RECOACH_DB_PATH）
 recoach-frontend/node_modules/   # 前端依赖
-recoach-server/venv/             # Python虚拟环境
+recoach-server/.venv/            # 后端虚拟环境
+re-coach-tui/node_modules/       # TUI 依赖
+re-coach-tui/dist/               # TUI 构建产物
+~/.recoach/store.json            # TUI 数据（可用 RECOACH_DATA_DIR 覆盖）
 ```
 
 ## 关键文件说明
 
 ### 根目录
 
-- **README.md**: 项目介绍、快速开始、核心特性
-- **docker-compose.yml**: 一键启动配置，包含前后端服务
-- **LICENSE**: MIT开源许可证
-- **CONTRIBUTING.md**: 贡献指南和开发规范
-
-### 前端 (recoach-frontend/)
-
-- **src/App.tsx**: 主应用组件，管理会话和消息
-- **src/components/**: UI组件
-  - Conversation.tsx: 对话展示
-  - Composer.tsx: 消息输入
-  - SideRail.tsx: 侧边栏（记忆、性能）
-- **src/services/**: API通信
-  - agent-client.ts: 后端API客户端
-  - sse-protocol.ts: SSE协议处理
-- **tests/**: 单元测试
+- **README.md / README_EN.md**: 项目介绍、快速开始、仓库组成、文档索引
+- **docker-compose.yml**: 一键启动配置。只放容器部署特有的值（DB 绝对路径、令牌、可信网段），
+  应用配置由 `env_file` 从 `recoach-server/.env` 注入
+- **tools/consistency_audit.py**: 检查 `.env.example` 与 `config.py` 字段/默认值是否同步、
+  后端 Metrics 字段是否同步到前端与 TUI 类型、错误码是否被前端硬编码、是否残留调试输出
 
 ### 后端 (recoach-server/)
 
-- **app/main.py**: FastAPI应用入口、中间件、异常处理
-- **app/config.py**: 环境变量配置管理
-- **app/db.py**: SQLite数据库schema和操作
-- **app/routes/**: API端点
-  - sessions.py: 会话管理
-  - turns.py: Turn流式处理
-  - memories.py: 记忆CRUD
-  - meta.py: 服务元数据
-- **app/services/**: 业务逻辑
-  - coach.py: LLM调用
-  - gate.py: 澄清判断
-  - memory.py: 记忆检索和写入
-  - compiler.py: 上下文编译
-- **tests/**: 完整测试套件（81个测试）
+```
+recoach-server/
+├── Dockerfile                  # python:3.10-slim，非 root 运行，从 requirements.lock.txt 安装
+├── .dockerignore
+├── requirements.txt            # 直接依赖
+├── requirements.lock.txt       # 锁定快照（python:3.10-slim 的 pip freeze 生成，仅用于镜像）
+├── pytest.ini
+├── .env.example                # 全部 RECOACH_* 配置项与默认值
+├── README.md                   # 后端设计与 API
+├── README_LLM_CONFIG.md        # LLM 供应商接入指南
+├── app/
+│   ├── main.py                 # FastAPI 入口、中间件链、统一错误信封、health
+│   ├── config.py               # 集中式配置（RECOACH_* 环境变量）
+│   ├── db.py                   # SQLite schema、migration、FTS5 可用性探测
+│   ├── auth.py                 # 访问控制中间件（令牌模式 / 本机回环开发模式）
+│   ├── errors.py               # 错误码表与用户可见消息（含 provider 失败分类）
+│   ├── schemas.py              # Pydantic 契约
+│   ├── sse.py                  # SSE frame 编码
+│   ├── ids.py / tokens.py
+│   ├── routes/                 # sessions / turns / forks / memories / meta / metrics
+│   └── services/               # 业务逻辑（见下）
+└── tests/                      # 18 个测试文件
+```
+
+业务逻辑（`app/services/`）：
+
+| 文件 | 职责 |
+|---|---|
+| `orchestrator.py` | 单 Turn 编排与 SSE 终止语义 |
+| `gate.py` | Clarification Gate / ResolvedTask |
+| `memory.py` | 作用域检索、写入、归档、遗忘、反馈分类 |
+| `compiler.py` | 确定性 Context Compiler、系统提示词、不可信内容定界 |
+| `coach.py` | 模板 / OpenAI 兼容 / DeepSeek / Anthropic 流式 Coach |
+| `brief.py` | Session、Session Brief、消息、Concept State |
+| `events.py` | 事件白名单与幂等写入（指标的唯一事实来源） |
+| `selection.py` | 记忆选择结果与 presentation 的加载 |
+| `metrics.py` | 运行指标 p50/p95 汇总 |
+| `ratelimit.py` / `turn_gate.py` | 每身份限流 / 并发 Turn 闸门 |
+| `turns.py` | 逻辑 Turn 存储、claim、历史恢复、启动时恢复遗留 streaming Turn |
+
+### 前端 (recoach-frontend/)
+
+```
+recoach-frontend/
+├── Dockerfile                  # node:22 构建 → nginx 提供静态产物与 /api 反代
+├── nginx.conf                  # 安全响应头、CSP、SSE 关闭缓冲、剥离 x-user-id
+├── index.html
+├── vite.config.ts              # 固定端口 4173（strictPort），/api 代理到 127.0.0.1:8000
+├── tsconfig*.json
+├── public/recoach-mark.svg
+├── scripts/e2e-smoke.mjs       # 前后端 HTTP 级联调
+├── src/
+│   ├── App.tsx                 # Session、逻辑 Turn、流消费、重试、历史恢复
+│   ├── types.ts                # 与服务端 presentation / metrics 对齐的类型
+│   ├── styles.css
+│   ├── components/             # Conversation / Composer / SideRail /
+│   │                           # FairForkComparison / FormulaText / ModelBadge
+│   ├── services/               # agent-client / sse-protocol / turn-retry /
+│   │                           # service-meta / fallback-notice
+│   └── data/demo.ts            # 脱机演示数据（真实模式不调用）
+└── tests/                      # 4 个测试文件
+```
+
+### TUI (re-coach-tui/)
+
+```
+re-coach-tui/
+├── package.json                # bin: recoach；engines: node >= 22.19
+├── tsconfig.json / tsconfig.build.json
+├── vitest.config.ts
+├── src/
+│   ├── cli.ts                  # 入口：配置校验、数据目录、会话恢复
+│   ├── index.ts                # 对外导出
+│   ├── config.ts               # RECOACH_* 环境变量（与后端对齐）
+│   ├── store.ts                # JSON 文件持久化（替代 SQLite）
+│   ├── orchestrator.ts         # Turn 编排流水线
+│   ├── agent.ts / ids.ts / tokens.ts / types.ts
+│   ├── core/                   # gate / memory / compiler / coach / brief / events / selection
+│   └── ui/                     # app / theme / sanitize（pi-tui 界面）
+└── tests/                      # 6 个测试文件
+```
+
+### AI Coach Skill (ai-coach-skill-repo/)
+
+```
+ai-coach-skill-repo/
+├── README.md                   # 设计说明（中文）
+├── README_EN.md                # 设计说明（英文）
+├── LICENSE
+└── skills/
+    ├── Hermes/SKILL.md
+    ├── Codex/SKILL.md
+    └── Claude Desktop/SKILL.md
+```
+
+三个 `SKILL.md` 是**同一份内容的三个副本**（适配各平台的 Skill / Instructions 机制），
+不包含可执行代码，也不被上面三个应用引用。
 
 ## 文档
 
-- **docs/quickstart.md**: 5分钟快速上手
-- **docs/deployment.md**: 详细部署指南
-- **recoach-frontend/README.md**: 前端架构和开发
-- **recoach-server/README.md**: 后端设计和API
-- **recoach-server/README_LLM_CONFIG.md**: LLM配置指南
+- **docs/quickstart.md**: 5 分钟快速上手（Docker 与本地开发）
+- **docs/deployment.md**: 部署指南（访问控制、限流、备份、故障排查）
+- **recoach-frontend/README.md**: 前端能力、SSE 契约、已实现与未实现边界
+- **recoach-server/README.md**: 后端架构、API 表、能力诚实性
+- **recoach-server/README_LLM_CONFIG.md**: LLM 供应商配置与验证
+- **re-coach-tui/README.md**: TUI 用法与后端模块对应关系
+- **ai-coach-skill-repo/README.md**: AI Coach 的设计理念与安装方式
 
 ## Docker
 
-- **Dockerfile** (前后端各一个): 构建生产镜像
+- **Dockerfile**（前后端各一个）: 构建生产镜像
 - **docker-compose.yml**: 编排配置，包含：
-  - backend服务 (端口8000)
-  - frontend服务 (端口4173)
-  - 数据卷挂载
-  - 健康检查
+  - `backend` 服务（容器内 8000，宿主侧由 `RECOACH_BACKEND_PORT` 决定，只绑 `127.0.0.1`）
+  - `frontend` 服务（`127.0.0.1:4173`，唯一对外入口，同源反代 `/api`）
+  - `./data` 数据卷挂载、健康检查、内存/CPU 上限、`no-new-privileges`
+  - 固定网段 `172.28.0.0/24`，与 `RECOACH_TRUSTED_HOSTS` 默认值必须一致
 
 ## CI/CD
 
-- **.github/workflows/test.yml**: GitHub Actions配置
-  - 后端测试 (pytest)
-  - 前端测试 (npm test)
-  - TypeScript类型检查
-  - Docker镜像构建
+- **.github/workflows/test.yml**: GitHub Actions 配置
+  - `backend`: Python 3.10 上安装依赖 → `pytest -q` → `python tools/consistency_audit.py`
+  - `frontend`: Node 22 上 `npm ci` → `tsc --noEmit` → `npm test`
+  - `docker-build`: 前后端镜像构建（只验证构建，不启动）
+  - TUI 测试尚未接入 CI
 
 ## 开始使用
 
-1. **快速开始**: `docker-compose up -d`
+1. **快速开始**: `docker compose up -d`
 2. **本地开发**: 参考 `docs/quickstart.md`
 3. **生产部署**: 参考 `docs/deployment.md`
 
 ## 更多信息
 
-- 主README: 项目概述和快速开始
-- 前端README: 前端技术细节
-- 后端README: 后端架构设计
+- 主 README: 项目概述、仓库组成与文档索引
+- 前端 README: 前端技术细节与未实现边界
+- 后端 README: 后端架构设计与 API

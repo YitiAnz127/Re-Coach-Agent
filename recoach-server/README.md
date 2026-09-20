@@ -25,27 +25,31 @@
 |---|---|
 | `POST /api/v1/sessions` | 创建 Session，返回 `{data:{sessionId, locale}}` |
 | `POST /api/v1/sessions/{sessionId}/turns` | 提交消息并返回 `text/event-stream` 流式回答；普通会话使用服务端默认记忆策略，Fork 会话使用创建时固定的分支策略 |
-| `GET /api/v1/memories` | 只读查看当前用户的稳定记忆，可按 `status` / `type` / `domain` 过滤 |
-| `GET /api/v1/meta` | 查看版本、schema 与真实能力开关；未实现能力明确为 `False` |
+| `GET /api/v1/sessions/{sessionId}/turns` | 读取该会话已完成的历史轮次（`turnId` / `userText` / `assistantText` / `mode` / `presentation` / `createdAt`），供客户端刷新后恢复对话；单次最多 200 条，只返回 `completed` 且带 presentation 的轮次 |
 | `POST /api/v1/sessions/{sessionId}/forks` | 从同一 Session 创建固定 memory on/off 的公平对照分支 |
+| `GET /api/v1/memories` | 只读查看当前用户的稳定记忆，可按 `status` / `type` / `domain` 过滤 |
 | `GET /api/v1/metrics/summary` | 按用户或 Session 汇总运行指标 p50/p95 |
-| `GET /health` | 健康检查 |
-| `GET /docs` | OpenAPI 交互文档 |
+| `GET /api/v1/meta` | 查看版本、schema 与真实能力开关；未实现能力明确为 `False` |
+| `GET /health` | 健康检查（始终免鉴权） |
+| `GET /docs` | OpenAPI 交互文档（令牌模式下默认关闭） |
 
 - 开发身份来自受信头 `X-User-Id` 或 `RECOACH_DEV_USER`；JSON body 不接受 `user_id`。
 - Turn 会验证 Session 归属；不存在和越权统一返回 `404 SESSION_NOT_FOUND`。
 - 请求校验失败统一返回 `422 {error:{code:"INVALID_REQUEST", ...}}`。
+- `x-user-id` 只在调用方通过鉴权后才可信：令牌模式校验 `RECOACH_API_TOKEN`，
+  未配置令牌时进入开发模式（只接受本机回环客户端）。
 
 ### 在线链路
 
 - 最小 Session 状态和最近对话预读。
 - Clarification Gate 输出三态：`READY`、`NEEDS_CLARIFICATION`、`ANSWER_WITH_ASSUMPTION`；每轮只问一个澄清问题，最多连续两轮，后续回答继承上一轮概念。
 - 只有形成 `ResolvedTask` 后才执行完整长期记忆检索。
-- 确定性 Context Compiler 去重、排序、覆盖和裁剪，不使用额外 Planner LLM。
-- 单次主 Coach 流式输出；外部模型首字前失败时回退到模板，保证链路可用。
+- 确定性 Context Compiler 去重、排序、覆盖和裁剪，不使用额外 Planner LLM；注入的记忆与历史对话以定界符包裹（`<untrusted_memory>`），并要求系统提示词声明其不可信语义。
+- 单次主 Coach 流式输出；外部模型首字前失败时回退到模板，保证链路可用（`RECOACH_LLM_FAIL_FAST=true` 时改为直接返回 `MODEL_UNAVAILABLE`）。
 - SSE 事件共五种：`turn.started`、`assistant.delta`、`assistant.thinking`、`turn.completed`、`turn.error`；每条流恰好一个终止事件。
 - `assistant.thinking` 转发模型 `reasoning_content`，思考过程实时可见；正文首字延迟（TTFT）与思考 TTFT 分开记录。
 - canonical Turn 完成态落库成功后才发送 `turn.completed`。
+- 进程启动时把遗留的 `streaming` Turn 标为 `error`（`CANCELLED` / `ProcessRestart`），客户端用同一 `clientTurnId` 重试即可原子 claim 后重新执行。
 
 ### 记忆与状态
 
@@ -55,8 +59,8 @@
 - 当前请求可临时覆盖冲突的长期偏好，不删除原记忆。
 - 同作用域更新保留 `archived + superseded_by` 演化链。
 - 支持显式长期写入、Session-only 规则和自然语言遗忘（如"忘记之前关于……的偏好"）。
-- `RECOACH_MEMORY_ON` 是普通 Chat 的服务端记忆策略；客户端不能在单个 Turn 中覆盖。需要 On/Off 对比时使用 Fair Fork，由服务端生成固定且只读的两个隔离分支。
-- Session Brief 做 P0 字段级 Delta 更新：目标、当前焦点、开放问题和连续澄清计数。
+- `RECOACH_MEMORY_ON` 是普通 Chat 的服务端记忆策略；客户端不能在单个 Turn 中覆盖（请求带 `memoryMode` 会返回 422）。需要 On/Off 对比时使用 Fair Fork，由服务端生成固定且只读的两个隔离分支。
+- Session Brief 做 P0 字段级 Delta 更新：目标、当前焦点、开放问题和连续澄清计数；CAS 冲突可被调用方观测。
 - 命题级 Concept State 保存 `state + evidence_kind + source_event_id`，状态必须有来源事件。
 
 ### 幂等与迁移
@@ -74,33 +78,49 @@
 - `tool_called`、`memory_candidate_created`、`remote_sync_attempted`、`remote_sync_completed` 为预留事件：事件名已在白名单，对应功能尚未实现；
 - 事件按 `(turn_id, kind)` 幂等记录，重试时返回既有 `event_id`。
 
+### 请求保护
+
+- `RECOACH_RATE_LIMIT_PER_MINUTE`：每身份每分钟计费型请求上限，超限返回 `429`（附 `retry-after`）。
+  完成态重放与 409 冲突不消耗配额。
+- `RECOACH_MAX_CONCURRENT_TURNS`：并发的流式 Turn 上限，超限返回 `503 SERVICE_BUSY`。
+- `RECOACH_MAX_BODY_BYTES`：请求体上限，按实际收到的字节数复核（不信任 `Content-Length`），超限返回 `413`。
+- 以上计数都在进程内存中，多副本部署时各算一份。
+
 ### 自动化验证
 
-当前后端测试共 **81 项**，覆盖：
+当前后端测试共 **18 个测试文件、217 条用例**（`pytest -q` 实测 `217 passed`；其中 165 个测试函数经
+`@pytest.mark.parametrize` 展开），覆盖：
 
 - Session/SSE 基础契约与唯一终止事件；
 - canonical 文本一致与失败重试幂等；
-- Session 所有权与 404 语义；
-- 澄清与上下文续接；
+- Session 所有权与 404 语义、令牌模式与开发模式的鉴权边界；
+- 澄清与上下文续接、编号选项与非信息性输入的处理、内部标记剥离；
 - 记忆写入、召回、覆盖、遗忘和冲突链；
 - 同领域错误泛化防护；
+- 提示注入定界与 Brief CAS 可观测性；
+- 会话历史恢复（顺序、原始输入保留、404 语义、条数上限、只有 completed 才返回）；
 - migration、health、meta 与 DeepSeek provider 行为（thinking 转发、TTFT 记录）；
-- 服务端默认记忆策略、任意请求级 `memoryMode` 返回 422、旧幂等记录重放兼容、Fair Fork 分支模式固定与 Off 分支零个性化、fork 创建原子性。
+- 服务端默认记忆策略、请求级 `memoryMode` 返回 422、旧幂等记录重放兼容、Fair Fork 分支模式固定与 Off 分支零个性化、fork 创建原子性；
+- provider 失败分类、降级披露与 `RECOACH_LLM_FAIL_FAST` 行为。
+
+跨文件一致性另有 `tools/consistency_audit.py`（在仓库根目录运行）：核对 `config.py` 的 30 个配置字段
+是否全部在 `.env.example` 有说明且默认值一致、错误码是否被前端硬编码、后端 Metrics 字段是否同步到
+前端与 TUI 类型、是否残留调试输出。
 
 ## 3. 环境要求
 
-- Python 3.11 或更高（当前 `.venv` 使用 Python 3.11）。
+- Python 3.10 或更高（`Dockerfile` 基础镜像与 CI 都用 3.10；本文档的示例 venv 用 3.11）。
 - Windows PowerShell 示例；其他平台可使用等价命令。
 
 ## 4. 安装
 
 以下命令请在后端项目根目录执行（即能看到 `app/`、`requirements.txt` 和 `.env.example` 的目录）。README 不依赖任何特定电脑的盘符、用户名或项目绝对路径。
 
-推荐用 [uv](https://docs.astral.sh/uv/) 创建独立虚拟环境并安装锁文件依赖：
+推荐用 [uv](https://docs.astral.sh/uv/) 创建独立虚拟环境并安装依赖：
 
 ```powershell
 uv venv --python 3.11 .venv
-uv pip install --python .venv -r requirements.lock.txt
+uv pip install --python .venv -r requirements.txt
 ```
 
 不使用 uv 时，用标准库等价完成：
@@ -112,6 +132,20 @@ python -m pip install -r requirements.txt
 ```
 
 > 后续所有启动、测试命令都通过 `.venv` 执行，不要使用系统全局 Python，避免依赖串环境。
+
+### `requirements.lock.txt` 只用于镜像，不要在 Windows 上装它
+
+`requirements.lock.txt` 是**给 Linux 镜像用的**锁文件：它由 `python:3.10-slim` 里的 `pip freeze` 生成，
+而 `pip freeze` 不保留环境标记，解析平台专属的依赖会被写成无条件依赖——第 41 行 `uvloop==0.22.1`
+只支持 Linux/macOS，在 Windows 上会因源码编译失败而中断整条安装
+（`RuntimeError: uvloop does not support Windows at the moment`）。
+
+- **Windows 本地开发**：装 `requirements.txt`。`uvicorn[standard]` 自带
+  `sys_platform != 'win32'` 标记，在 Windows 上不会选中 uvloop（已实测通过）。
+- **镜像构建**：继续用 `requirements.lock.txt`，保证与镜像环境一致。改依赖后必须重新生成
+  （见[部署指南](../docs/deployment.md#其他)），且必须用与镜像相同版本的 Python 解析。
+
+要跨平台复现同一套版本，需要保留环境标记的锁文件，或按平台各生成一份——`pip freeze` 做不到这两点。
 
 ## 5. 配置
 
@@ -135,10 +169,14 @@ RECOACH_LLM_PROVIDER=deepseek
 RECOACH_DEEPSEEK_API_KEY=你的密钥
 RECOACH_DEEPSEEK_MODEL=deepseek-v4-flash
 RECOACH_DEEPSEEK_THINKING=enabled
-RECOACH_DEEPSEEK_REASONING_EFFORT=high
+RECOACH_DEEPSEEK_REASONING_EFFORT=low
 ```
 
-支持四种主模型提供方：`template`（默认，无 key）、`openai_compatible`、`deepseek`、`anthropic`。不要把 API key 放入前端的 `VITE_*` 变量——`VITE_*` 会进入浏览器产物。
+支持四种主模型提供方：`template`（默认，无 key）、`openai_compatible`、`deepseek`、`anthropic`。
+`RECOACH_DEEPSEEK_REASONING_EFFORT` 的代码默认值是 `medium`，`.env.example` 有意推荐 `low`
+（附实测延迟数据）；详细取舍见 [LLM 配置指南](README_LLM_CONFIG.md)。
+
+不要把 API key 放入前端的 `VITE_*` 变量——`VITE_*` 会进入浏览器产物。
 
 ## 6. 启动
 
@@ -165,6 +203,8 @@ API 文档：`http://127.0.0.1:8000/docs`。
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
+当前为 **18 个测试文件、217 条用例**（实测 `217 passed`）。
+
 前后端同时启动后，可在前端目录运行 `npm run smoke` 做 HTTP 级联调。
 
 ## 8. 当前开发身份边界
@@ -185,7 +225,8 @@ API 文档：`http://127.0.0.1:8000/docs`。
 
 - `microExperiment`：受限 Python/NumPy 微型实验工具未实现；
 - `complexFeedbackDistillation`：复杂、多意图反馈的回答后异步 LLM 蒸馏未实现；
-- `sessionRecoveryApi`：`GET /turns/:turnId` 与断线恢复接口未实现；
+- `sessionRecoveryApi`：按 `turnId` 查询单轮的接口与断线恢复重连未实现（会话级历史恢复已可用，见
+  `GET /api/v1/sessions/{sessionId}/turns`）；
 - 记忆召回率、选择精度和错误泛化率等质量指标：尚无评测真值，暂不输出；运行指标 p50/p95 已通过 `metricsSummary` 提供。
 - `supermemorySync`：Supermemory 异步同步适配器未实现。
 
@@ -193,28 +234,47 @@ API 文档：`http://127.0.0.1:8000/docs`。
 
 ```text
 app/
-  main.py                 FastAPI 入口、CORS、422 envelope、health
-  config.py               集中式配置（RECOACH_* 环境变量）
+  main.py                 FastAPI 入口、CORS、422 envelope、request-id、请求体上限、health
+  config.py               集中式配置（30 个 RECOACH_* 字段）
   db.py                   SQLite schema、migration、FTS5
-  routes/                 sessions / turns / memories / meta
+  auth.py                 访问控制中间件（令牌模式 / 本机回环开发模式）
+  errors.py               错误码表与 provider 失败分类
+  schemas.py              Pydantic 契约
+  sse.py / ids.py / tokens.py
+  routes/                 sessions / turns / forks / memories / meta / metrics
   services/gate.py        Clarification Gate / ResolvedTask
   services/memory.py      作用域检索、写入、归档、遗忘、反馈分类
-  services/compiler.py    确定性 Context Compiler 与系统提示词
+  services/compiler.py    确定性 Context Compiler、系统提示词、不可信内容定界
   services/orchestrator.py 单 Turn 编排与 SSE 终止语义
   services/coach.py       模板 / OpenAI-compatible / DeepSeek / Anthropic 流式 Coach
   services/brief.py       Session Brief、消息、Concept State
   services/events.py      事件白名单与幂等写入
-  services/turns.py       逻辑 Turn 存储
-scripts/
-  verify_llm.py           模型供应商配置自检
+  services/selection.py   记忆选择结果与 presentation 加载
+  services/metrics.py     运行指标 p50/p95 汇总
+  services/ratelimit.py   每身份限流
+  services/turn_gate.py   并发 Turn 闸门
+  services/turns.py       逻辑 Turn 存储、claim、历史恢复、启动时恢复
 tests/
-  test_api.py             基础契约
-  test_memory.py          记忆与门控
-  test_p0_contract.py     P0 契约
-  test_deepseek_meta.py   meta 能力诚实性
-  test_deepseek_provider.py DeepSeek provider 行为
+  test_api.py                       基础契约
+  test_memory.py                    记忆与门控
+  test_p0_contract.py               P0 契约
+  test_v11_contract.py              v1.1 契约（错误信封、Fair Fork、指标）
+  test_session_history.py           会话历史恢复
+  test_auth_hardening.py            鉴权边界
+  test_deepseek_meta.py             meta 能力诚实性
+  test_deepseek_provider.py         DeepSeek provider 行为
+  test_provider_faults.py           provider 故障
+  test_provider_degradation.py      失败分类、降级披露与 fail-fast
+  test_prompt_and_cas_hardening.py  提示注入定界与 Brief CAS
+  test_ux_input_handling.py         选项选择、非信息性输入、内部标记剥离
+  test_hardening_b4_b7.py           并发与幂等加固
+  test_hardening_b8_b13.py          INSERT 竞态与闸门归还
+  test_bugfix_regression.py         缺陷回归
+  test_review_race.py               评审竞态
+  test_review_snapshot.py           评审快照
+  test_second_review.py             二轮评审
 requirements.txt          直接依赖
-requirements.lock.txt     锁定版本（含传递依赖，可复现安装）
+requirements.lock.txt     锁定版本（含传递依赖；Linux 镜像用，不保留环境标记）
 pytest.ini                pytest 配置
 ```
 

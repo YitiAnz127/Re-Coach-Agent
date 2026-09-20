@@ -1,6 +1,6 @@
 """访问控制中间件。
 
-信任模型（v1.2 起）：
+信任模型（v1.1 起）：
 
 - 身份仍然由 `x-user-id` 请求头表达，但该头**只在调用方已通过鉴权之后**才可信。
   鉴权方式为共享令牌 `RECOACH_API_TOKEN`（`Authorization: Bearer <token>`）。

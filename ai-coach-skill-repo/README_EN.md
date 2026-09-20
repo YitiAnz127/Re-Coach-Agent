@@ -289,11 +289,14 @@ The goal is to make the user increasingly capable of solving complex problems wi
 
 | Platform | File |
 |---|---|
-| Hermes | `skills/hermes/ai-coach/SKILL.md` |
-| Codex | `skills/codex/ai-coach/SKILL.md` |
-| Claude Desktop | `skills/claude-desktop/AI-Coach-Instructions.md` |
+| Hermes | `skills/Hermes/SKILL.md` |
+| Codex | `skills/Codex/SKILL.md` |
+| Claude Desktop | `skills/Claude Desktop/SKILL.md` |
 
-All versions share the same core design while adapting to platform-specific Skill / Instructions mechanisms.
+The three files are **byte-for-byte identical** — three copies of the same SKILL.md sharing one core
+design. They are kept separate only because each platform installs and loads Skills / Instructions from a
+different location. The repository contains no executable code, and Re: Coach's other parts never
+reference it.
 
 ## Installation
 
@@ -302,7 +305,7 @@ All versions share the same core design while adapting to platform-specific Skil
 Copy:
 
 ```text
-skills/hermes/ai-coach/SKILL.md
+skills/Hermes/SKILL.md
 ```
 
 to:
@@ -316,7 +319,7 @@ to:
 Copy:
 
 ```text
-skills/codex/ai-coach/SKILL.md
+skills/Codex/SKILL.md
 ```
 
 to:
@@ -330,7 +333,7 @@ to:
 Copy the contents of:
 
 ```text
-skills/claude-desktop/AI-Coach-Instructions.md
+skills/Claude Desktop/SKILL.md
 ```
 
 into the relevant Claude Desktop Project Instructions / persistent Instructions.
@@ -339,7 +342,7 @@ into the relevant Claude Desktop Project Instructions / persistent Instructions.
 
 ## Current Version
 
-**v2.0**
+**v2.1** (the title of `skills/*/SKILL.md` is `AI Coach v2.1`)
 
 Includes:
 
@@ -352,11 +355,14 @@ Includes:
 - Error Diagnosis
 - Adaptive Challenge
 - Transfer Verification
+- Verify and Challenge (calibrate check difficulty from conversational evidence; never a gate or a score)
 - Collaboration Retrospective
 - Persistent Collaboration Principles
 - Principle Lifecycle
 - Capability Map
 - Mutual Learning
+- Silent Reporting Filter (report only when worth it — otherwise stay silent)
+- Coding-Agent Defaults
 
 ## Roadmap
 

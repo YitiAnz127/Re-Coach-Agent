@@ -351,11 +351,13 @@ AI 可以提升何时解释、何时询问、如何判断理解状态、如何�
 
 | 平台 | 文件 |
 |---|---|
-| Hermes | `skills/hermes/ai-coach/SKILL.md` |
-| Codex | `skills/codex/ai-coach/SKILL.md` |
-| Claude Desktop | `skills/claude-desktop/AI-Coach-Instructions.md` |
+| Hermes | `skills/Hermes/SKILL.md` |
+| Codex | `skills/Codex/SKILL.md` |
+| Claude Desktop | `skills/Claude Desktop/SKILL.md` |
 
-三个版本共享同一核心设计，并针对各平台的 Skill / Instructions 机制适配。
+三份文件的**内容完全相同**（同一份 SKILL.md 的三个副本），共享同一核心设计；
+分开存放只是因为各平台的 Skill / Instructions 安装位置与加载机制不同。
+本仓库不含任何可执行代码，也不被 Re: Coach 的其他部分引用。
 
 ## 安装
 
@@ -364,7 +366,7 @@ AI 可以提升何时解释、何时询问、如何判断理解状态、如何�
 将：
 
 ```text
-skills/hermes/ai-coach/SKILL.md
+skills/Hermes/SKILL.md
 ```
 
 复制到：
@@ -378,7 +380,7 @@ skills/hermes/ai-coach/SKILL.md
 将：
 
 ```text
-skills/codex/ai-coach/SKILL.md
+skills/Codex/SKILL.md
 ```
 
 复制到：
@@ -392,7 +394,7 @@ skills/codex/ai-coach/SKILL.md
 将：
 
 ```text
-skills/claude-desktop/AI-Coach-Instructions.md
+skills/Claude Desktop/SKILL.md
 ```
 
 的内容加入 Claude Desktop 的 Project Instructions / 持久化 Instructions。
@@ -401,7 +403,7 @@ skills/claude-desktop/AI-Coach-Instructions.md
 
 ## 当前版本
 
-**v2.0**
+**v2.1**（`skills/*/SKILL.md` 的标题即 `AI Coach v2.1`）
 
 当前设计包含：
 
@@ -414,11 +416,14 @@ skills/claude-desktop/AI-Coach-Instructions.md
 - Error Diagnosis
 - Adaptive Challenge
 - Transfer Verification
+- Verify and Challenge（按对话证据校准验证难度，不把检查当门槛或评分）
 - Collaboration Retrospective
 - Persistent Collaboration Principles
 - Principle Lifecycle
 - Capability Map
 - Mutual Learning
+- Silent Reporting Filter（只在值得时才报告，否则保持沉默）
+- Coding-Agent Defaults（编码智能体默认行为）
 
 ## Roadmap
 

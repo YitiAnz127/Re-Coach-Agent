@@ -12,8 +12,12 @@
 - ⚡ **流式输出**：思考过程与正文实时渲染（Markdown）
 - 🔄 **自动学习**：从反馈中提取稳定偏好（"以后先给公式"→长期记忆）
 - 🔎 **澄清选项**：弹出选择列表，一键选卡点方向
+- 💾 **会话恢复**：启动时自动回到上次会话并回放历史轮次（无历史则静默开新会话）
+- 🔒 **端点校验**：带密钥的自定义 Base URL 必须是 https（仅本机地址允许 http），否则拒绝启动
 
 ## 快速开始
+
+需要 Node.js >= 22.19（见 `package.json` 的 `engines`）。
 
 ```bash
 npm install
@@ -43,12 +47,18 @@ set RECOACH_LLM_MAX_TOKENS=10000
 
 数据默认存于 `~/.recoach/store.json`（可用 `RECOACH_DATA_DIR` 覆盖）。
 
+`RECOACH_*` 环境变量名与后端 `app/config.py` 对齐。`RECOACH_DEV_USER` 默认为 `dev_user`；
+`RECOACH_DEEPSEEK_REASONING_EFFORT` 在 TUI 中默认为 `medium`。
+
 ## 测试
 
 ```bash
-npm test        # vitest 单元测试（澄清门控/记忆/编译/完整 Turn）
+npm test        # vitest 单元测试：6 个测试文件 / 92 个用例（实测 `92 passed`）
 npm run typecheck
 ```
+
+测试覆盖澄清门控、作用域记忆、确定性编译、完整 Turn 流水线，以及行为对齐与加固回归。
+注意：TUI 测试尚未接入 CI（`.github/workflows/test.yml` 目前只跑后端与前端）。
 
 ## 与后端逻辑对齐
 
@@ -59,6 +69,8 @@ npm run typecheck
 | `src/core/compiler.ts` | `app/services/compiler.py` |
 | `src/core/coach.ts` | `app/services/coach.py` |
 | `src/core/brief.ts` | `app/services/brief.py` |
+| `src/core/events.ts` | `app/services/events.py` |
+| `src/core/selection.ts` | `app/services/selection.py` |
 | `src/orchestrator.ts` | `app/services/orchestrator.py` |
 | `src/store.ts` | `app/db.py`（JSON 持久化替代 SQLite） |
 | `src/ui/` | `recoach-frontend`（pi-tui 替代 React） |
@@ -67,14 +79,15 @@ npm run typecheck
 
 ```text
 src/
-  cli.ts                入口
+  cli.ts                入口：配置校验、数据目录、会话恢复
+  index.ts              对外导出（startApp / runTurn / Store / 门控 / 编译 / 记忆）
   config.ts             配置（RECOACH_* 环境变量）
   store.ts              JSON 文件持久化
   agent.ts              Turn 事件契约
   orchestrator.ts       Turn 编排流水线
-  core/                业务逻辑（gate/memory/compiler/coach/brief/events）
-  ui/                  pi-tui 界面（app / theme）
-tests/                 核心逻辑单元测试
+  core/                业务逻辑（gate/memory/compiler/coach/brief/events/selection）
+  ui/                  pi-tui 界面（app / theme / sanitize）
+tests/                 6 个测试文件（核心逻辑与加固回归）
 ```
 
 ## 使用示例
