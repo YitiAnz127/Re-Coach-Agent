@@ -135,8 +135,11 @@ npm start
 ## 🛠 技术栈
 
 **前端**：React 19 + TypeScript 5.9 + Vite 8 + KaTeX（`react-markdown` / `remark-math` / `rehype-katex`）
+
 **后端**：FastAPI + SQLite（WAL + FTS5，不可用时降级 LIKE）+ SSE；镜像与 CI 使用 Python 3.10，本地 venv 使用 3.11
+
 **TUI**：TypeScript + `@earendil-works/pi-tui` + chalk，JSON 文件持久化
+
 **LLM**：`template`（默认，无需密钥）/ `openai_compatible` / `deepseek` / `anthropic`
 
 ---
