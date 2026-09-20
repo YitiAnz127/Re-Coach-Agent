@@ -8,6 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **版本：** v1.1.0（phase `p1`，策略版本 `policy_1.1.0`）——取自运行时 `GET /api/v1/meta`
+
 **核心原则：** 先把问题弄清楚，再检索相关记忆；少调用、低延迟、自动记忆、作用域明确。
 
 ---
