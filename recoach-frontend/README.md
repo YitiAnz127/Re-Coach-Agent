@@ -52,7 +52,7 @@
 
 ### 测试与构建
 
-当前有 **4 个测试文件、24 个 Node 内置单元测试**（`npm test` 实测：`pass 24 / fail 0`），覆盖：
+`npm test`（Node 内置 test runner）覆盖：
 
 - SSE 尾部 frame flush、缺少终止事件、重复终止事件；
 - 完成事件结构校验；

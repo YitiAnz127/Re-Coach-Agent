@@ -85,7 +85,7 @@ recoach-server/
 │   ├── ids.py / tokens.py
 │   ├── routes/                 # sessions / turns / forks / memories / meta / metrics
 │   └── services/               # 业务逻辑（见下）
-└── tests/                      # 24 个测试文件
+└── tests/                      # 后端测试（契约 / 记忆 / provider / 加固回归）
 ```
 
 业务逻辑（`app/services/`）：
@@ -126,7 +126,7 @@ recoach-frontend/
 │   ├── services/               # agent-client / sse-protocol / turn-retry /
 │   │                           # service-meta / fallback-notice
 │   └── data/demo.ts            # 脱机演示数据（真实模式不调用）
-└── tests/                      # 4 个测试文件
+└── tests/                      # 前端测试（SSE 协议 / 重试 / meta / 降级提示）
 ```
 
 ### TUI (re-coach-tui/)
@@ -145,7 +145,7 @@ re-coach-tui/
 │   ├── agent.ts / ids.ts / tokens.ts / types.ts / text.ts
 │   ├── core/                   # gate / teaching / memory / compiler / coach / brief / events / selection
 │   └── ui/                     # app / theme / sanitize（pi-tui 界面）
-└── tests/                      # 11 个测试文件
+└── tests/                      # TUI 测试（核心逻辑 / 与后端对齐回归 / 可选真模型 E2E）
 ```
 
 ### AI Coach Skill (ai-coach-skill-repo/)
