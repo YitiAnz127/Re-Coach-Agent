@@ -32,3 +32,14 @@ export function newMemoryId(): string {
 export function newSessionId(): string {
   return `sess_${randomId(12)}`;
 }
+
+/**
+ * 事件 id。同样必须走 crypto。
+ *
+ * 事件 id 不只用于展示：它会作为 `sourceEventIds` 写进记忆，并参与
+ * writeMemory / forgetMemories 的**幂等匹配**。撞了会让一条新记忆被当成
+ * "已写过"而静默跳过，或让一次遗忘重放错的对象。
+ */
+export function newEventId(): string {
+  return `evt_${randomId(10)}`;
+}

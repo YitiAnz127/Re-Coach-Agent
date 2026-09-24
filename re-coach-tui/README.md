@@ -7,6 +7,7 @@
 ## 功能
 
 - 🧠 **智能澄清**：宽泛提问先问一个高信息量问题，连续两轮后带假设继续
+- 📍 **逐问教学起点**：目标深度与已有前置分开；讲解后输入 `/pace basic`、`/pace ok` 或 `/pace fast`，只校正上一个概念的后续起点
 - 📝 **作用域记忆**：五级作用域（领域/概念/命题/任务）+ 反馈门控自动记忆
 - 🎯 **确定性编译**：记忆按证据强度加权召回，预算内进 Capsule
 - ⚡ **流式输出**：思考过程与正文实时渲染（Markdown）
@@ -40,23 +41,37 @@ set RECOACH_LLM_BASE_URL=https://api.openai.com/v1
 set RECOACH_LLM_API_KEY=你的密钥
 set RECOACH_LLM_MODEL=gpt-4o-mini
 
-# 通用配置；TIMEOUT 与服务端一致，单位为秒
+# 通用配置；TIMEOUT 与服务端**语义一致**：限的是两次数据之间的间隔，
+# 不是整轮总时长——持续吐字的回答不会被掐断（high 档首字就可能 >60s）
 set RECOACH_LLM_TIMEOUT=90
 set RECOACH_LLM_MAX_TOKENS=10000
+
+# 首字之前模型失败时：默认降级为模板并如实标注降级原因；
+# 设为 true 则不再兜底，直接以 MODEL_UNAVAILABLE 报错（与服务端同语义）
+set RECOACH_LLM_FAIL_FAST=false
 ```
 
 数据默认存于 `~/.recoach/store.json`（可用 `RECOACH_DATA_DIR` 覆盖）。
 
-`RECOACH_*` 环境变量名与后端 `app/config.py` 对齐。`RECOACH_DEV_USER` 默认为 `dev_user`； `RECOACH_DEEPSEEK_REASONING_EFFORT` 在 TUI 中默认为 `medium`。
+`RECOACH_*` 环境变量名与后端 `app/config.py` 对齐，**取值也保持一致**：例如 `RECOACH_DEEPSEEK_MODEL` 默认 `deepseek-v4-flash`、`RECOACH_ANTHROPIC_MODEL` 默认 `claude-opus-5`。两边默认值漂移会让"只配密钥不配模型"的用户在两个界面静默跑在不同模型上，因此 `tools/consistency_audit.py` 会逐项核对它们。`RECOACH_DEV_USER` 默认为 `dev_user`；`RECOACH_DEEPSEEK_REASONING_EFFORT` 在 TUI 中默认为 `medium`。
 
 ## 测试
 
 ```bash
-npm test        # vitest 单元测试：6 个测试文件 / 92 个用例（实测 `92 passed`）
+npm test        # vitest 单元测试
 npm run typecheck
+npm run build   # 走 tsconfig.build.json，与 typecheck 的 tsconfig.json 覆盖范围不同
 ```
 
-测试覆盖澄清门控、作用域记忆、确定性编译、完整 Turn 流水线，以及行为对齐与加固回归。注意：TUI 测试尚未接入 CI（`.github/workflows/test.yml` 目前只跑后端与前端）。
+测试覆盖澄清门控、作用域记忆、确定性编译、完整 Turn 流水线，以及**与后端的对齐回归**和加固回归。这三条命令都由 CI 的 `tui` 作业执行（`.github/workflows/test.yml`）。
+
+TUI 是后端管线的独立实现，两侧靠人工保持 1:1，所以除离线测试外还有一个**连真端点**的端到端用例——它需要付费密钥与外网，因此默认整体跳过，只在你手动提供密钥时执行：
+
+```bash
+RECOACH_DEEPSEEK_API_KEY=sk-xxx npx vitest --run tests/live-provider.test.ts
+```
+
+它验证的是替身测不到的东西：SSE 分帧（跨块边界、多字节字符、三种行终止符）、thinking/content 分流、降级与 fail-fast 的实际分类，以及流式增量与落库正文是否逐字一致。
 
 ## 与后端逻辑对齐
 
@@ -84,8 +99,9 @@ src/
   agent.ts              Turn 事件契约
   orchestrator.ts       Turn 编排流水线
   core/                业务逻辑（gate/memory/compiler/coach/brief/events/selection）
+  text.ts              码点长度（与 Python len() 对齐）
   ui/                  pi-tui 界面（app / theme / sanitize）
-tests/                 6 个测试文件（核心逻辑与加固回归）
+tests/                 核心逻辑、加固回归、与后端的对齐回归，以及可选的真模型 E2E
 ```
 
 ## 使用示例
@@ -96,6 +112,7 @@ tests/                 6 个测试文件（核心逻辑与加固回归）
 > 讲 X 的时候先给公式              ← 反馈 → 写入长期记忆
 > 忘记之前关于公式的偏好           ← 自然语言遗忘
 > 以后都先讲直觉，最后再给公式      ← 交互规则
+> /pace basic                       ← 上轮讲解太基础 → 抬高该概念后续起点
 ```
 
 ### 存储与 Fork 兼容性

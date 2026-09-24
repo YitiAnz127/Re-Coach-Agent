@@ -26,6 +26,7 @@
 |---|---|
 | `POST /api/v1/sessions` | 创建 Session，返回 `{data:{sessionId, locale}}` |
 | `POST /api/v1/sessions/{sessionId}/turns` | 提交消息并返回 `text/event-stream` 流式回答；普通会话使用服务端默认记忆策略，Fork 会话使用创建时固定的分支策略 |
+| `POST /api/v1/sessions/{sessionId}/turns/{turnId}/calibration` | 对已完成的概念讲解提交 `too_basic` / `just_right` / `too_fast`，可对同一回答改评；仅影响该用户、该概念的后续教学起点 |
 | `GET /api/v1/sessions/{sessionId}/turns` | 读取该会话已完成的历史轮次（`turnId` / `userText` / `assistantText` / `mode` / `presentation` / `createdAt`），供客户端刷新后恢复对话；单次最多 200 条，只返回 `completed` 且带 presentation 的轮次 |
 | `POST /api/v1/sessions/{sessionId}/forks` | 从同一 Session 创建固定 memory on/off 的公平对照分支 |
 | `GET /api/v1/memories` | 只读查看当前用户的稳定记忆，可按 `status` / `type` / `domain` 过滤 |
@@ -38,6 +39,7 @@
 - Turn 会验证 Session 归属；不存在和越权统一返回 `404 SESSION_NOT_FOUND`。
 - 请求校验失败统一返回 `422 {error:{code:"INVALID_REQUEST", ...}}`。
 - `x-user-id` 只在调用方通过鉴权后才可信：令牌模式校验 `RECOACH_API_TOKEN`，未配置令牌时进入开发模式（只接受本机回环客户端）。
+- 默认信任模型是「单实例 + 可信客户端」：共享令牌只回答"谁能访问"，**任何持令牌者都能用 `x-user-id` 指定任意身份**。本机单人使用没有实际风险；需要收紧时设置 `RECOACH_LOCKED_USER`，身份被钉死为该用户，请求里指定他人返回 `401 UNAUTHORIZED`（会话级路由按既有约定收敛为 `404`）。非法值会让进程启动失败，而不是被静默忽略。
 
 ### 在线链路
 
@@ -45,11 +47,16 @@
 - Clarification Gate 输出三态：`READY`、`NEEDS_CLARIFICATION`、`ANSWER_WITH_ASSUMPTION`；每轮只问一个澄清问题，最多连续两轮，后续回答继承上一轮概念。
 - 只有形成 `ResolvedTask` 后才执行完整长期记忆检索。
 - 确定性 Context Compiler 去重、排序、覆盖和裁剪，不使用额外 Planner LLM；注入的记忆与历史对话以定界符包裹（`<untrusted_memory>`），并要求系统提示词声明其不可信语义。
+- 本轮目标深度与教学起点分开：明确自述优先，其次同概念反馈，再次同命题的显式状态；没有证据保持 `unknown`。概念反馈独立于长期表达偏好，关闭记忆时不提供；Fair Fork 不写入或读取新反馈。
 - 单次主 Coach 流式输出；外部模型首字前失败时回退到模板，保证链路可用（`RECOACH_LLM_FAIL_FAST=true` 时改为直接返回 `MODEL_UNAVAILABLE`）。
 - SSE 事件共五种：`turn.started`、`assistant.delta`、`assistant.thinking`、`turn.completed`、`turn.error`；每条流恰好一个终止事件。
 - `assistant.thinking` 转发模型 `reasoning_content`，思考过程实时可见；正文首字延迟（TTFT）与思考 TTFT 分开记录。
 - canonical Turn 完成态落库成功后才发送 `turn.completed`。
-- 进程启动时把遗留的 `streaming` Turn 标为 `error`（`CANCELLED` / `ProcessRestart`），客户端用同一 `clientTurnId` 重试即可原子 claim 后重新执行。
+- 进程启动时把遗留的 `streaming` Turn 标为 `error`（`CANCELLED` / `ProcessRestart`），客户端用同一 `clientTurnId` 重试即可原子 claim 后重新执行。只回收 `owner_instance` 等于本实例的行（以及该列引入之前的空值行）：多实例共享同一份 DB 时，无条件扫描会把别的实例**正在流式输出**的轮次误标为失败，那些轮次随后被重试认领，等于同一轮重复执行（双份 LLM 成本 + 两个写入者）。实例标识持久化在库里而非主机名，因此容器重建后仍是同一个实例，单实例部署保持"启动即恢复"。
+
+  流式期间由独立线程按墙钟刷新心跳（`turns.TURN_HEARTBEAT_SECONDS`，5 秒）。心跳刻意不挂在 SSE 事件上：上游可能出现「持续有数据但不产出任何事件」（代理注入的 `: keep-alive`、空 delta 分片），挂在事件上的心跳会静默停掉，让正在进行的轮次被判成孤儿并抢走。
+
+  另一条兜底：`streaming` 行只要**失去心跳**超过 `llm_timeout × 2 + 60` 秒（`turns.stale_streaming_cutoff`），就按孤儿回收/认领。判据是「多久没有心跳」而不是「跑了多久」——`llm_timeout` 限的是两次数据之间的间隔，一轮合法 Turn 的持续输出时间可以远超它。它保证 owner 不匹配却又不属于本实例的行（例如改过 `RECOACH_INSTANCE_ID`、或只恢复了 `turns` 而没恢复 `runtime_meta`）也能自愈，而不是让那个 `clientTurnId` 永远 409。
 
 ### 记忆与状态
 
@@ -66,6 +73,7 @@
 ### 幂等与迁移
 
 - `(session_id, clientTurnId)` 唯一标识一个逻辑 Turn。
+- 可被 claim 重跑的状态有三种：失败态 `error`、超时孤儿的 `streaming`、以及 `completed` 但 `presentation_json` 为空的不一致态——后者既不能被重放也不能被认领，不处理就会让那个 `clientTurnId` 永远 409。
 - 完成态重试重放相同 `turnId` 和 canonical 回答；失败态重试复用相同 Turn，不重复用户/助手消息、事件和显式记忆写入。
 - 流仍在处理时返回 `409 TURN_IN_PROGRESS`，防止并发重复执行；同一 id 提交不同内容返回 `409 TURN_CONFLICT`。
 - `schema_migrations` 记录轻量迁移，当前 schema 版本可从 `/api/v1/meta` 查看。
@@ -87,7 +95,7 @@
 
 ### 自动化验证
 
-当前后端测试共 **18 个测试文件、217 条用例**（`pytest -q` 实测 `217 passed`；其中 165 个测试函数经 `@pytest.mark.parametrize` 展开），覆盖：
+当前后端测试共 **24 个测试文件、288 条用例**（`pytest -q` 实测 `288 passed`），覆盖：
 
 - Session/SSE 基础契约与唯一终止事件；
 - canonical 文本一致与失败重试幂等；
@@ -99,9 +107,12 @@
 - 会话历史恢复（顺序、原始输入保留、404 语义、条数上限、只有 completed 才返回）；
 - migration、health、meta 与 DeepSeek provider 行为（thinking 转发、TTFT 记录）；
 - 服务端默认记忆策略、请求级 `memoryMode` 返回 422、旧幂等记录重放兼容、Fair Fork 分支模式固定与 Off 分支零个性化、fork 创建原子性；
-- provider 失败分类、降级披露与 `RECOACH_LLM_FAIL_FAST` 行为。
+- provider 失败分类、降级披露与 `RECOACH_LLM_FAIL_FAST` 行为；
+- 逐问教学起点（明确自述优先、同概念反馈校正、无证据保持 `unknown`）与概念反馈接口（只有归属正确的已完成讲解轮次可评）；
+- 单用户身份锁定、自建端点 Base URL 的明文 `http` 拦截、流式单行上限与指标扫描上限；
+- 实例归属的启动恢复、孤儿 `streaming` 行认领与「completed 但无 presentation」的恢复。
 
-跨文件一致性另有 `tools/consistency_audit.py`（在仓库根目录运行）：核对 `config.py` 的 30 个配置字段是否全部在 `.env.example` 有说明且默认值一致、错误码是否被前端硬编码、后端 Metrics 字段是否同步到前端与 TUI 类型、是否残留调试输出。
+跨文件一致性另有 `tools/consistency_audit.py`（在仓库根目录运行）：核对 `config.py` 的 32 个配置字段是否全部在 `.env.example` 有说明且默认值一致、错误码是否被前端硬编码、后端 Metrics 字段是否同步到前端与 TUI 类型、是否残留调试输出。
 
 ## 3. 环境要求
 
@@ -192,13 +203,15 @@ API 文档：`http://127.0.0.1:8000/docs`。
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-当前为 **18 个测试文件、217 条用例**（实测 `217 passed`）。
+当前为 **24 个测试文件、288 条用例**（实测 `288 passed`）。
 
 前后端同时启动后，可在前端目录运行 `npm run smoke` 做 HTTP 级联调。
 
 ## 8. 当前开发身份边界
 
 当前没有正式登录系统。`X-User-Id` 仅用于本地测试或由受信反向代理注入；普通公网部署不能直接信任浏览器传入该请求头。内置 Web 客户端不会持有或发送 `RECOACH_API_TOKEN`，令牌模式用于可信 API 客户端；对外提供 Web 界面需要由外层身份代理完成登录并在服务端侧注入凭证。
+
+这不是待修的缺陷，而是刻意保留的单机单人定位：令牌只解决"谁能访问"，不解决"用户之间如何隔离"。把服务交给更多人使用时，`RECOACH_LOCKED_USER` 可以把身份钉死为单一用户、拒绝任何冒充尝试，代价是同时失去多用户能力。要做到"多人各自隔离且不可伪造"，需要令牌⇄用户绑定或签名会话，属于独立于本项目的改造。
 
 进入生产前至少需要：
 
@@ -210,7 +223,7 @@ API 文档：`http://127.0.0.1:8000/docs`。
 
 ## 9. 已实现与未实现边界
 
-`GET /api/v1/meta` 的 `capabilities` 是能力诚实性的唯一权威：未实现的能力一律返回 `False`。当前为 `True` 的项：`sqlite`、`fts5`、`memoryOn`、`fairAbFork`、`metricsSummary`、`clarificationGate`、`deterministicContextCompiler`、`idempotentTurnRetry`。当前为 `False` 的项：
+`GET /api/v1/meta` 的 `capabilities` 是能力诚实性的唯一权威：未实现的能力一律返回 `False`。当前为 `True` 的项：`sqlite`、`fts5`、`memoryOn`、`fairAbFork`、`metricsSummary`、`clarificationGate`、`deterministicContextCompiler`、`idempotentTurnRetry`；`teachingCalibration` 在启用记忆时为 `True`。当前为 `False` 的项：
 
 - `microExperiment`：受限 Python/NumPy 微型实验工具未实现；
 - `complexFeedbackDistillation`：复杂、多意图反馈的回答后异步 LLM 蒸馏未实现；
@@ -223,7 +236,7 @@ API 文档：`http://127.0.0.1:8000/docs`。
 ```text
 app/
   main.py                 FastAPI 入口、CORS、422 envelope、request-id、请求体上限、health
-  config.py               集中式配置（30 个 RECOACH_* 字段）
+  config.py               集中式配置（32 个 RECOACH_* 字段）
   db.py                   SQLite schema、migration、FTS5
   auth.py                 访问控制中间件（令牌模式 / 本机回环开发模式）
   errors.py               错误码表与 provider 失败分类
@@ -231,6 +244,8 @@ app/
   sse.py / ids.py / tokens.py
   routes/                 sessions / turns / forks / memories / meta / metrics
   services/gate.py        Clarification Gate / ResolvedTask
+  services/teaching.py    逐问教学起点推断、概念反馈读取与写入
+  services/instances.py   进程实例标识（启动恢复的归属判定）
   services/memory.py      作用域检索、写入、归档、遗忘、反馈分类
   services/compiler.py    确定性 Context Compiler、系统提示词、不可信内容定界
   services/orchestrator.py 单 Turn 编排与 SSE 终止语义
@@ -261,6 +276,12 @@ tests/
   test_review_race.py               评审竞态
   test_review_snapshot.py           评审快照
   test_second_review.py             二轮评审
+  test_teaching_start.py            教学起点推断与概念反馈
+  test_identity_lock.py             单用户身份锁定
+  test_instance_scoped_recovery.py  实例归属的启动恢复
+  test_base_url_security.py         自建端点的明文 http 拦截
+  test_stream_line_bound.py         流式单行缓冲上限
+  test_metrics_scan_bound.py        指标汇总的扫描上限
 requirements.txt          直接依赖
 requirements.lock.txt     锁定版本（含传递依赖；Linux 镜像用，不保留环境标记）
 pytest.ini                pytest 配置

@@ -45,6 +45,23 @@ test("rejects a completed event without a valid presentation", () => {
   );
 });
 
+test("accepts a scoped teaching start and rejects malformed metadata", () => {
+  const valid = JSON.parse(completed.slice(completed.indexOf("data: ") + 6));
+  valid.presentation.teachingStart = {
+    level: "novice", source: "concept_feedback", domain: "deep_learning", concept: "反向传播",
+  };
+  const decoder = new SseProtocolDecoder();
+  const events = decoder.push(`data: ${JSON.stringify(valid)}\n\n`);
+  assert.equal(events[0]?.type, "turn.completed");
+
+  valid.presentation.teachingStart.level = "mastered";
+  const invalid = new SseProtocolDecoder();
+  assert.throws(
+    () => invalid.push(`data: ${JSON.stringify(valid)}\n\n`),
+    (error: unknown) => error instanceof SseProtocolError && error.code === "INVALID_SSE_EVENT",
+  );
+});
+
 
 test("preserves requestId on structured SSE errors", () => {
   const decoder = new SseProtocolDecoder();

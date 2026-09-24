@@ -12,6 +12,7 @@ export interface ServiceMeta {
   thinkingEnabled: boolean;
   reasoningEffort: "low" | "medium" | "high" | null;
   fairAbFork: boolean;
+  teachingCalibration: boolean;
   /** 各 provider 是否已配置密钥（布尔，不含密钥内容）。旧后端可能缺失。 */
   keysPresent: Record<string, boolean>;
 }
@@ -57,7 +58,8 @@ export function parseServiceMeta(payload: unknown): ServiceMeta {
     typeof llm.configured !== "boolean" ||
     typeof llm.thinkingEnabled !== "boolean" ||
     !isEffort(llm.reasoningEffort) ||
-    (capabilities.fairAbFork !== undefined && typeof capabilities.fairAbFork !== "boolean")
+    (capabilities.fairAbFork !== undefined && typeof capabilities.fairAbFork !== "boolean") ||
+    (capabilities.teachingCalibration !== undefined && typeof capabilities.teachingCalibration !== "boolean")
   ) {
     throw new Error("服务信息字段无效。");
   }
@@ -68,6 +70,7 @@ export function parseServiceMeta(payload: unknown): ServiceMeta {
     thinkingEnabled: llm.thinkingEnabled,
     reasoningEffort: llm.reasoningEffort,
     fairAbFork: capabilities.fairAbFork === true,
+    teachingCalibration: capabilities.teachingCalibration === true,
     // 可选字段：旧后端不返回时按"未知"处理（空对象），不影响其余功能。
     keysPresent: isRecord(llm.keysPresent)
       ? Object.fromEntries(
@@ -100,4 +103,5 @@ export const demoServiceMeta: ServiceMeta = {
   thinkingEnabled: false,
   reasoningEffort: null,
   fairAbFork: false,
+  teachingCalibration: false,
 };

@@ -34,6 +34,8 @@ PROVIDER_FAILURE_MESSAGES: dict[str, tuple[str, bool]] = {
     "NETWORK": ("无法连接模型服务（网络或 DNS 问题），请检查网络与 Base URL 配置。", True),
     "PROVIDER_ERROR": ("模型服务端错误，请稍后重试。", True),
     "HTTP_ERROR": ("模型服务返回异常状态，请检查模型名称与接口地址配置。", False),
+    # 上游流式响应里出现了超长未终止行：接口不是标准的 SSE，或对端在发垃圾数据。
+    "STREAM_TOO_LONG": ("模型服务返回的流式响应格式异常，已中止本轮，请检查接口地址是否正确。", True),
     "ERROR": ("调用模型时出错，请稍后重试。", True),
 }
 

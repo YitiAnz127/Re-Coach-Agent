@@ -320,6 +320,17 @@ RECOACH_API_TOKEN=
 RECOACH_ALLOW_LOCAL_WITHOUT_TOKEN=true
 # Extra trusted IPs / CIDRs in development mode; Docker Compose uses 172.28.0.0/24 by default
 RECOACH_TRUSTED_HOSTS=
+# Process instance id. The startup recovery of leftover streaming Turns only touches Turns this
+# instance created. Empty = use the random id persisted in the database (the DB lives on a mounted
+# volume, so it survives restarts and container recreation); leave it empty for a single instance.
+# Set a different value per process only when several processes share one database
+# (e.g. uvicorn --workers 4).
+RECOACH_INSTANCE_ID=
+# Single-user lock. Empty (default) = identity comes from x-user-id, so anyone holding the token can
+# claim any identity. Set it to your user id to pin the identity; a request carrying a different
+# x-user-id is rejected (401) instead of silently ignored. Only [A-Za-z0-9._@:-] with length 1..128
+# is accepted; an invalid value makes the process fail to start.
+RECOACH_LOCKED_USER=
 # Whether to expose /docs and /openapi.json; empty means token mode off, development mode on
 # RECOACH_EXPOSE_DOCS=false
 
@@ -340,12 +351,19 @@ RECOACH_ANTHROPIC_API_KEY=
 RECOACH_ANTHROPIC_MODEL=claude-opus-5
 
 # OpenAI-compatible configuration
+# When an API key is set the URL must be https://, otherwise the Authorization
+# header travels in plaintext. Plain http:// is allowed only for loopback and
+# private ranges (a container reaching a local Ollama / vLLM on the host);
+# an http:// URL pointing at a public address makes the process fail to start --
+# such a mistake is silent at runtime and the cost is a leaked key.
 RECOACH_LLM_BASE_URL=
 RECOACH_LLM_API_KEY=
 RECOACH_LLM_MODEL=
 
 # LLM general parameters
 RECOACH_LLM_MAX_TOKENS=10000
+# The timeout (seconds) bounds the gap BETWEEN two chunks, not the total duration:
+# a streaming answer that keeps producing tokens is never cut off mid-way.
 RECOACH_LLM_TIMEOUT=90
 RECOACH_LLM_MAX_CONTINUATIONS=2
 # When the provider fails before the first token: false = template fallback, true = MODEL_UNAVAILABLE
@@ -361,6 +379,8 @@ RECOACH_MEMORY_ON=true
 RECOACH_MEMORY_MAX_SELECTED=3
 RECOACH_MEMORY_HARD_LIMIT=4
 RECOACH_MEMORY_CAPSULE_TOKENS=280
+# The micro-experiment tool is not implemented (/meta reports microExperiment: false)
+# and this setting currently has no effect.
 RECOACH_TOOL_BUDGET=1
 ```
 
@@ -581,6 +601,7 @@ The token is a **single shared secret**: it answers "who may reach this instance
 - A caller holding the token can still set `x-user-id: <anything>` and read or write that identity's data.
 - The current model therefore suits **single-user self-hosting** or deployments where **all users trust each other**.
 - For mutually untrusted users you need real login at the reverse proxy (OIDC / your own accounts), you must derive `user_id` from the server-side session instead of a request header, and each user needs their own credential. The change points are `recoach-server/app/auth.py` and `app/routes/sessions.py:current_user_id`.
+- To tighten it to "one identity per instance", set `RECOACH_LOCKED_USER`: the identity is pinned to that value, an explicit different `x-user-id` returns `401` (session-scoped routes collapse to `404` as usual). It **rejects** impersonation instead of ignoring it silently, and an invalid value makes the process fail to start; the cost is losing multi-user capability.
 
 `/docs` and `/openapi.json` are closed by default in token mode; set `RECOACH_EXPOSE_DOCS=true` to expose them deliberately.
 
@@ -613,6 +634,7 @@ Do not simply change the entry to `0.0.0.0:4173` and set `RECOACH_API_TOKEN`: th
 - `RECOACH_MAX_CONCURRENT_TURNS` (default 16): concurrent streaming Turns. Exceeding it returns `503 SERVICE_BUSY`. This blocks the resource exhaustion caused by "open many SSE streams and never read them".
 - `RECOACH_MAX_BODY_BYTES` (default 65536): request body size limit; exceeding it returns `413`.
 - All counters live in process memory, so **with multiple replicas each replica counts separately**. For a strict global quota, move to a shared backend such as Redis.
+- Startup recovery of leftover `streaming` Turns is scoped by instance ownership (`RECOACH_INSTANCE_ID`, or the random id persisted in the database when empty): when several processes share one database, give each a different value, otherwise one process starting up marks another one's in-flight Turns as failed.
 
 ### Other
 

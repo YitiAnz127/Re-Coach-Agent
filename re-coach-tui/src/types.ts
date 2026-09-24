@@ -3,6 +3,14 @@
 export type Locale = "zh-CN" | "en";
 
 export type Depth = "auto" | "L0" | "L1" | "L2" | "L3" | "L4" | "L5";
+export type TeachingLevel = "unknown" | "novice" | "familiar" | "advanced";
+export type TeachingRating = "too_basic" | "just_right" | "too_fast";
+export interface TeachingStart {
+  level: TeachingLevel;
+  source: "unknown" | "current_explicit" | "concept_feedback" | "proposition_state";
+  domain: string;
+  concept: string;
+}
 
 export type TaskScope =
   | "直觉解释"
@@ -22,6 +30,7 @@ export interface ResolvedTask {
   proposition: string;
   knownContext: string[];
   desiredDepth: Depth;
+  teachingStart?: TeachingStart;
   taskScope: TaskScope;
   outputPreference: string[];
   openQuestions: string[];
@@ -211,6 +220,7 @@ export interface TurnMetrics {
 export interface TurnPresentation {
   mode: TurnMode;
   depth: Depth;
+  teachingStart?: TeachingStart;
   focus: string;
   plan: string[];
   personalization: PersonalizationEntry[];

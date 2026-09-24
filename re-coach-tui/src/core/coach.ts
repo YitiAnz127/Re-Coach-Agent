@@ -1,6 +1,7 @@
 // 主 Coach 流式输出（与后端 coach.py 1:1 对齐；用原生 fetch 替代 httpx）
 import type { ResolvedTask, StreamDelta } from "../types.js";
 import { resolveProvider, type AppConfig } from "../config.js";
+import { codePointLength } from "../text.js";
 
 export interface CoachMeta {
   provider: string;
@@ -16,7 +17,7 @@ export interface CoachMeta {
   fallbackReason: string;
   truncated: boolean;
   continuationCount: number;
-  thinkingTokens: number;
+  /** 本轮模型实际产出的 thinking 字符数（进入 model_called 事件，供诊断思考是否吃满预算）。 */
   actualThinkingChars: number;
   suppressThinking: boolean;
 }
@@ -38,6 +39,29 @@ export class ProviderHttpError extends Error {
   }
 }
 
+/** 上游流式响应出现超长未终止行（见 streamDataLines 的 MAX_PENDING_LINE）。 */
+export class ProviderStreamTooLong extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderStreamTooLong";
+  }
+}
+
+/**
+ * 真实 provider 在首字之前失败，且调用方选择了 fail-fast（不降级为模板）。
+ *
+ * 只携带粗粒度原因类别，异常原文不外传——原文可能含请求 URL、响应体片段。
+ */
+export class ProviderFailure extends Error {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super(reason);
+    this.name = "ProviderFailure";
+    this.reason = reason;
+  }
+}
+
 /** 把 provider 失败归类。只返回类别，绝不带出异常原文（可能含 URL / 响应体）。 */
 export function classifyProviderFailure(err: unknown): string {
   if (err && typeof err === "object" && "status" in err) {
@@ -50,7 +74,33 @@ export function classifyProviderFailure(err: unknown): string {
   const name = err instanceof Error ? err.name : "";
   if (name === "AbortError" || /timeout/i.test(String(name))) return "TIMEOUT";
   if (err instanceof TypeError) return "NETWORK"; // fetch 的网络层失败
+  if (name === "ProviderStreamTooLong") return "STREAM_TOO_LONG";
   return "ERROR";
+}
+
+/**
+ * 模型不可用时按**粗粒度原因**给出的可操作提示（对齐后端 errors.py 的
+ * PROVIDER_FAILURE_MESSAGES）。只含类别信息，绝不带出异常原文。
+ */
+export function providerFailureMessage(reason: string): string {
+  switch (reason) {
+    case "AUTH":
+      return "模型服务拒绝了访问凭证（密钥无效、已过期或无权限），请检查 API Key 配置。";
+    case "QUOTA":
+      return "模型服务额度不足或触发频率限制，请检查账户余额或降低请求频率。";
+    case "TIMEOUT":
+      return "模型服务响应超时，请稍后重试。";
+    case "NETWORK":
+      return "无法连接模型服务（网络或 DNS 问题），请检查网络与 Base URL 配置。";
+    case "PROVIDER_ERROR":
+      return "模型服务端错误，请稍后重试。";
+    case "HTTP_ERROR":
+      return "模型服务返回异常状态，请检查模型名称与接口地址配置。";
+    case "STREAM_TOO_LONG":
+      return "模型服务返回的流式响应格式异常，已中止本轮，请检查接口地址是否正确。";
+    default:
+      return "调用模型时出错，请稍后重试。";
+  }
 }
 
 export function newCoachMeta(): CoachMeta {
@@ -66,38 +116,71 @@ export function newCoachMeta(): CoachMeta {
     fallbackReason: "",
     truncated: false,
     continuationCount: 0,
-    thinkingTokens: 0,
     actualThinkingChars: 0,
     suppressThinking: false,
   };
-}
-
-function estimateTokensChinese(text: string): number {
-  const chineseChars = Array.from(text).filter((c) => c >= "\u4e00" && c <= "\u9fff").length;
-  const otherChars = text.length - chineseChars;
-  return Math.round(chineseChars / 1.2 + otherChars / 4);
 }
 
 // 单行未终止时的缓冲上限。恶意/异常端点可以持续发送不含换行的数据，
 // AbortController 只限时间不限字节，没有这个上限就能在超时前打爆堆内存。
 const MAX_PENDING_LINE = 1_000_000;
 
-async function* streamDataLines(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+/**
+ * 空闲超时：限制**两次数据之间的间隔**，而不是整轮总时长。
+ *
+ * 与后端语义对齐——`RECOACH_LLM_TIMEOUT` 传给 httpx 时就是 read timeout
+ * （两次数据之间的间隔），不是总时长。这也是流式请求的正确语义。
+ *
+ * 回归：TUI 原本用一个固定的 setTimeout 当**总时长**上限，于是
+ * `RECOACH_DEEPSEEK_REASONING_EFFORT=high`（首字本身就可能 >60s）时，
+ * 正文会在 90s 处被拦腰截断，而后端跑同一轮会正常完成。
+ * 每次收到数据都重新计时，稳定输出的长回答就能跑完。
+ */
+function createIdleTimeout(ms: number, onExpire: () => void) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    arm(): void {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(onExpire, ms);
+    },
+    cancel(): void {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+    },
+  };
+}
+
+async function* streamDataLines(
+  body: ReadableStream<Uint8Array>,
+  /** 每读到一块数据回调一次，供调用方重置空闲超时。 */
+  onChunk?: () => void,
+): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   try {
     while (true) {
       const { done, value } = await reader.read();
-      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      // 收到数据即视为"还有进展"。
+      onChunk?.();
+      // SSE 允许 \n、\r、\r\n 三种行终止符（与后端 _iter_sse_lines 同样处理）。
+      // 只切 \n 的话，上游若用裸 \r 分帧，整个响应会被当成一行，正文静默变空。
+      // \r\n 归一后多出的空行会被下面的 startsWith("data:") 跳过。
+      buffer += (done ? decoder.decode() : decoder.decode(value, { stream: true }))
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n");
       let index: number;
       while ((index = buffer.indexOf("\n")) !== -1) {
         const line = buffer.slice(0, index).trim();
         buffer = buffer.slice(index + 1);
         if (line.startsWith("data:")) yield line.slice(5).trim();
       }
-      if (buffer.length > MAX_PENDING_LINE) {
-        throw new Error(`SSE 单行超过 ${MAX_PENDING_LINE} 字节上限，已中止读取。`);
+      if (codePointLength(buffer) > MAX_PENDING_LINE) {
+        // 用具名类型抛出，好让 classifyProviderFailure 归到 STREAM_TOO_LONG，
+        // 与后端的 ProviderStreamTooLong 保持同一类别。
+        throw new ProviderStreamTooLong(
+          `SSE 单行超过 ${MAX_PENDING_LINE} 字符上限，已中止读取。`,
+        );
       }
       if (done) {
         const line = buffer.trim();
@@ -148,8 +231,9 @@ async function* streamChatCompletions(
   const started = performance.now();
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), cfg.llmTimeoutMs);
+  const idle = createIdleTimeout(cfg.llmTimeoutMs, () => controller.abort());
   try {
+    idle.arm(); // 建立连接同样受"无数据"约束
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -190,7 +274,8 @@ async function* streamChatCompletions(
           meta.thinkingTtftMs = Math.round(performance.now() - started);
           if (meta.ttftMs === 0) meta.ttftMs = meta.thinkingTtftMs;
         }
-        thinkingCharCount += delta.reasoning_content.length;
+        // 与后端 len(reasoning) 对齐：按码点算，否则思考长度上限的触发点会不同
+        thinkingCharCount += codePointLength(delta.reasoning_content);
         meta.actualThinkingChars = thinkingCharCount;
         if (opts.thinkingCharLimit && thinkingCharCount >= opts.thinkingCharLimit) {
           if (!thinkingStopped) {
@@ -213,15 +298,12 @@ async function* streamChatCompletions(
       return out;
     };
 
-    for await (const data of streamDataLines(response.body)) {
+    for await (const data of streamDataLines(response.body, idle.arm)) {
       if (data === "[DONE]") break;
       for (const delta of processLine(`data: ${data}`)) yield delta;
     }
   } finally {
-    clearTimeout(timeout);
-    if (meta.actualThinkingChars > 0) {
-      meta.thinkingTokens = estimateTokensChinese(String(meta.actualThinkingChars));
-    }
+    idle.cancel();
   }
 }
 
@@ -276,8 +358,9 @@ async function* streamAnthropic(
 ): AsyncGenerator<StreamDelta> {
   const started = performance.now();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), cfg.llmTimeoutMs);
+  const idle = createIdleTimeout(cfg.llmTimeoutMs, () => controller.abort());
   try {
+    idle.arm();
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -297,8 +380,15 @@ async function* streamAnthropic(
     if (!response.ok || !response.body) {
       throw new ProviderHttpError("Anthropic", response.status);
     }
-    for await (const data of streamDataLines(response.body)) {
-      const evt: { type?: string; delta?: { text?: string; stop_reason?: string } } = JSON.parse(data);
+    for await (const data of streamDataLines(response.body, idle.arm)) {
+      let evt: { type?: string; delta?: { text?: string; stop_reason?: string } };
+      try {
+        evt = JSON.parse(data);
+      } catch {
+        // 与 OpenAI 分支一致：跳过无法解析的行，而不是让一行畸形数据
+        // （代理注入的 keep-alive 等）把整轮打成降级。
+        continue;
+      }
       if (evt.type === "content_block_delta" && evt.delta?.text) {
         if (meta.ttftMs === 0) meta.ttftMs = Math.round(performance.now() - started);
         yield { kind: "content", delta: evt.delta.text };
@@ -311,7 +401,7 @@ async function* streamAnthropic(
       }
     }
   } finally {
-    clearTimeout(timeout);
+    idle.cancel();
   }
 }
 
@@ -327,6 +417,12 @@ const DEPTH_LABEL: Record<string, string> = {
 function templateText(task: ResolvedTask, appliedLabels: string[]): string {
   const concept = task.concept || "这个概念";
   const depth = task.desiredDepth !== "auto" ? task.desiredDepth : "L2";
+  const startNote = {
+    novice: "先补必要定义和前置，再走到你要求的深度。",
+    familiar: "从你已有的基础继续，关键术语会在需要时解释。",
+    advanced: "跳过重复的入门定义，直接进入核心机制。",
+    unknown: "先给最小必要前置，再逐步展开。",
+  }[task.teachingStart?.level ?? "unknown"];
   let preferenceNote = appliedLabels.length
     ? `\n\n已按你的稳定偏好调整：${appliedLabels.join("；")}。`
     : "";
@@ -346,8 +442,8 @@ function templateText(task: ResolvedTask, appliedLabels: string[]): string {
     body = "先说它解决的问题，再连接已知前置；随后用最小直觉、机制步骤和边界把它落地。";
   }
   return (
-    `下面按「${concept} · ${task.taskScope}」来讲，局部深度 ${depth}（${DEPTH_LABEL[depth] ?? ""}）。\n\n` +
-    `${body}\n\n` +
+    `下面按「${concept} · ${task.taskScope}」来讲，目标深度 ${depth}（${DEPTH_LABEL[depth] ?? ""}）。\n\n` +
+    `${startNote}${body}\n\n` +
     "当前由内置模板回答：未配置外部模型。配置 RECOACH_LLM_PROVIDER 后，这里将替换为真实讲解，结构与个性化行为保持不变。" +
     `${preferenceNote}`
   );
@@ -448,9 +544,15 @@ export async function* streamExplanation(
     if (meta.truncated && meta.continuationCount < maxContinuations && !producedAny) return;
   } catch (err) {
     if (producedAny) throw err;
+    const reason = classifyProviderFailure(err);
+    if (cfg.llmFailFast) {
+      // 明确选择"失败即报错"：不降级为模板，把问题直接暴露给用户
+      // （对齐后端 RECOACH_LLM_FAIL_FAST）。只带类别，不带异常原文。
+      throw new ProviderFailure(reason);
+    }
     meta.fallback = true;
     // 只记录类别，异常原文不外流——它可能含请求 URL 或上游响应体。
-    meta.fallbackReason = classifyProviderFailure(err);
+    meta.fallbackReason = reason;
     meta.provider = "template";
     meta.model = "template";
     meta.ttftMs = 1;

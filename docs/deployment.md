@@ -318,6 +318,14 @@ RECOACH_API_TOKEN=
 RECOACH_ALLOW_LOCAL_WITHOUT_TOKEN=true
 # 开发模式下额外信任的 IP / CIDR；Docker Compose 默认使用 172.28.0.0/24
 RECOACH_TRUSTED_HOSTS=
+# 进程实例标识。启动时的遗留 streaming Turn 恢复只作用于本实例创建的轮次。
+# 留空 = 用库内持久化的随机标识（DB 在挂载卷上，重启/重建容器后不变），单实例部署保持默认即可。
+# 只有同一份 DB 上跑多个进程（如 uvicorn --workers 4）时才需要给每个进程设不同值。
+RECOACH_INSTANCE_ID=
+# 单用户锁定。留空（默认）= 身份由 x-user-id 表达，任何持令牌者都能指定任意身份。
+# 设成你的用户标识即可钉死身份；请求里再带别的 x-user-id 会被拒绝（401）而不是被静默忽略。
+# 只允许 [A-Za-z0-9._@:-] 且长度 1..128；填错会让进程启动失败。
+RECOACH_LOCKED_USER=
 # 是否暴露 /docs 与 /openapi.json；留空时令牌模式关闭、开发模式开启
 # RECOACH_EXPOSE_DOCS=false
 
@@ -338,12 +346,17 @@ RECOACH_ANTHROPIC_API_KEY=
 RECOACH_ANTHROPIC_MODEL=claude-opus-5
 
 # OpenAI兼容配置
+# 配了 API Key 时必须是 https://，否则 Authorization 头会明文上路。
+# http:// 只允许回环与私有网段（容器指向宿主机的 Ollama / vLLM 等本地推理服务）；
+# 指向公网地址的 http:// 会让进程启动失败——这类错误静默运行看不出来，代价却是密钥泄露。
 RECOACH_LLM_BASE_URL=
 RECOACH_LLM_API_KEY=
 RECOACH_LLM_MODEL=
 
 # LLM通用参数
 RECOACH_LLM_MAX_TOKENS=10000
+# 超时（秒）限的是**两次数据之间的间隔**，不是整轮总时长：
+# 流式回答只要持续吐字就不会被掐断，长回答不会被拦腰截断。
 RECOACH_LLM_TIMEOUT=90
 RECOACH_LLM_MAX_CONTINUATIONS=2
 # 首字前 provider 失败时：false=模板兜底，true=直接返回 MODEL_UNAVAILABLE
@@ -359,6 +372,7 @@ RECOACH_MEMORY_ON=true
 RECOACH_MEMORY_MAX_SELECTED=3
 RECOACH_MEMORY_HARD_LIMIT=4
 RECOACH_MEMORY_CAPSULE_TOKENS=280
+# 微型实验工具尚未实现（/meta 的 microExperiment 为 False），此项当前不生效
 RECOACH_TOOL_BUDGET=1
 ```
 
@@ -579,6 +593,7 @@ python -c "import secrets;print(secrets.token_urlsafe(32))"
 - 持有令牌的调用方仍然可以自行设置 `x-user-id: <任意值>`，读写该身份下的数据。
 - 因此当前模型适用于**单用户自用**或**全部使用者互相信任**的场景。
 - 若要面向互不信任的多用户，需要在反向代理层接入真实登录（OIDC / 自建账号），把 `user_id` 从"请求头"改为"服务端根据会话推导"，并给每个用户独立凭证。改动点在 `recoach-server/app/auth.py` 与 `app/routes/sessions.py:current_user_id`。
+- 只想收紧到"一个实例只有一个身份"时，设置 `RECOACH_LOCKED_USER` 即可：身份恒为该值，请求里显式指定他人返回 `401`，会话级路由按既有约定收敛为 `404`。它**拒绝**冒充而不是静默忽略，非法值会让进程启动失败；代价是同时失去多用户能力。
 
 `/docs` 与 `/openapi.json` 在令牌模式下默认关闭；需要时显式设 `RECOACH_EXPOSE_DOCS=true`。
 
@@ -638,6 +653,7 @@ backend:
 
 - 存储是 SQLite（WAL + FTS5，FTS5 不可用时降级到 LIKE），单写入者、本地文件，适合单实例单用户场景；`GET /api/v1/metrics/summary` 提供 p50/p95 运行指标。
 - 限流与并发闸门都在进程内存中，因此**不能靠多副本水平扩容获得全局配额**。
+- 启动时的遗留 `streaming` Turn 恢复按实例归属判定（`RECOACH_INSTANCE_ID`，留空时用库内持久化的随机标识）：同一份 DB 上跑多个进程时，每个进程要设不同的值，否则一个进程启动会把别的进程正在流式输出的轮次误标为失败。
 
 ### 尚未实现（提升容量前需要先做的工作）
 

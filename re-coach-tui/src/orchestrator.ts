@@ -1,7 +1,7 @@
 // Turn 编排（与后端 orchestrator.py 1:1 对齐，事件通过回调下发）
 import type { AppConfig } from "./config.js";
 import type { Store } from "./store.js";
-import type { ResolvedTask, SessionBrief, TurnPresentation } from "./types.js";
+import type { ResolvedTask, SessionBrief, TeachingRating, TurnPresentation } from "./types.js";
 import { newTurnId } from "./ids.js";
 import { makeEvent } from "./core/events.js";
 import {
@@ -14,7 +14,15 @@ import {
 import { runGate, detectConcept } from "./core/gate.js";
 import { resolveOptionSelection } from "./core/selection.js";
 import { compileContext, stripInternalMarkers } from "./core/compiler.js";
-import { streamExplanation, newCoachMeta, verifyOutput, splitChunks } from "./core/coach.js";
+import { inferTeachingStart } from "./core/teaching.js";
+import {
+  ProviderFailure,
+  providerFailureMessage,
+  streamExplanation,
+  newCoachMeta,
+  verifyOutput,
+  splitChunks,
+} from "./core/coach.js";
 // stripInternalMarkers 已在上方与 compileContext 一起导入
 import {
   applyTurnDelta,
@@ -22,6 +30,7 @@ import {
   recordConceptState,
 } from "./core/brief.js";
 import type { AgentSession, AgentTurnEvent } from "./agent.js";
+import { codePointLength } from "./text.js";
 
 interface SuggestedAction {
   id: string;
@@ -82,7 +91,10 @@ export interface RunTurnOptions {
 export async function runTurn(opts: RunTurnOptions): Promise<void> {
   const turnId = newTurnId();
   try {
-    await executeTurn(opts, turnId);
+    // 整轮包在一个写事务里：一轮 Turn 会触发约 10 次变更（事件、消息、Brief、
+    // 概念状态、记忆），逐次落盘等于把整份 store.json 重写十遍；文件随历史增长，
+    // 逐次写入整体退化成 O(n²)。见 Store.transaction 的说明。
+    await opts.store.transaction(() => executeTurn(opts, turnId));
   } catch {
     opts.onEvent({ type: "turn.error", turnId, code: "INTERNAL", message: "本轮处理或保存失败，请检查存储后重试。" });
   }
@@ -113,9 +125,38 @@ async function executeTurn(opts: RunTurnOptions, turnId: string): Promise<void> 
   }
   let brief = persisted.brief;
 
-  store.logEvent(makeEvent({ userId, turnId, kind: "turn_started", payload: { textLen: userText.length } }));
+  // 长度按码点计，与后端 len(user_text) 一致（日志值也要对得上）
+  store.logEvent(makeEvent({ userId, turnId, kind: "turn_started", payload: { textLen: codePointLength(userText) } }));
   const recentForGate = store.recentMessages(session.id, 4);
   store.saveMessage(session.id, turnId, "user", userText);
+
+  const pace = /^\/pace\s+(basic|ok|fast)$/i.exec(userText);
+  if (pace) {
+    const rating: TeachingRating = pace[1]!.toLowerCase() === "basic" ? "too_basic"
+      : pace[1]!.toLowerCase() === "fast" ? "too_fast" : "just_right";
+    const target = store.latestTeachingStartForSession(session.id);
+    const note = !effectiveMemoryOn || isFork
+      ? "当前会话不保存教学起点反馈。"
+      : target
+        ? `已记录；只用于「${target.start.concept}」的后续讲解。`
+        : "上一轮没有可调整的概念讲解。";
+    if (target && effectiveMemoryOn && !isFork) {
+      store.recordTeachingCalibration(target, userId, rating);
+      store.logEvent(makeEvent({ userId, turnId, kind: "feedback_received", payload: { kind: "teaching_calibration", rating, concept: target.start.concept } }));
+    }
+    onEvent({ type: "turn.started", turnId, mode: "explain", focus: "教学起点反馈", plan: ["记录局部反馈"] });
+    onEvent({ type: "assistant.delta", turnId, delta: note });
+    const presentation: TurnPresentation = {
+      mode: "explain", depth: "auto", focus: "教学起点反馈", plan: ["记录局部反馈"],
+      personalization: [], metrics: { timeToFirstTokenMs: 0, memorySearchMs: 0, contextCompileMs: 0, memoryCapsuleTokens: 0, totalInputTokens: 0 },
+      suggestedActions: [], truncated: false,
+    };
+    finalizeTurn(opts, { mode: "explain", brief, turnId, userText, assistantText: note,
+      focus: "教学起点反馈", presentation, memoryEnabled: effectiveMemoryOn,
+      memoryMutationsAllowed, fromFeedback: true });
+    onEvent({ type: "turn.completed", turnId, presentation });
+    return;
+  }
 
   // ---- 澄清选项的「打字选择」识别（与后端 selection.py 对齐）----
   // 澄清轮把选项标成 A/B/C/D/E，但用户经常直接打字回「1」或「A」。
@@ -132,7 +173,7 @@ async function executeTurn(opts: RunTurnOptions, turnId: string): Promise<void> 
         userId,
         turnId,
         kind: "clarification_resolved",
-        payload: { via: "typed_selector", rawLen: userText.length },
+        payload: { via: "typed_selector", rawLen: codePointLength(userText) },
       }),
     );
     userText = selected;
@@ -180,7 +221,7 @@ async function executeTurn(opts: RunTurnOptions, turnId: string): Promise<void> 
 
   const gate = runGate(userText, { clarifyStreak: brief.clarifyStreak, knownContext: contextHints.filter(Boolean) });
 
-  if (feedbackNote && (feedback.kind === "write_longterm" || feedback.kind === "forget") && userText.length <= 40) {
+  if (feedbackNote && (feedback.kind === "write_longterm" || feedback.kind === "forget") && codePointLength(userText) <= 40) {
     gate.decision = "READY";
     gate.focus = "偏好已更新";
     gate.plan = ["确认反馈处理结果"];
@@ -240,6 +281,9 @@ async function executeTurn(opts: RunTurnOptions, turnId: string): Promise<void> 
     const states = effectiveMemoryOn ? (fork?.conceptSnapshot ?? store.listConceptStates(userId, task.concept, task.domain, Number.MAX_SAFE_INTEGER))
       .filter((s) => s.userId === userId && (s.concept === task.concept || (!task.concept && s.domain === task.domain)) && (!forkConceptIds || forkConceptIds.has(s.id)))
       .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5) : [];
+    const calibration = effectiveMemoryOn && !isFork
+      ? store.latestTeachingCalibration(userId, task.domain, task.concept) : undefined;
+    task.teachingStart = inferTeachingStart(task, userText, states, calibration);
     const recent = store.recentMessages(session.id);
     context = compileContext({
       task,
@@ -254,7 +298,7 @@ async function executeTurn(opts: RunTurnOptions, turnId: string): Promise<void> 
     if (effectiveMemoryOn) {
       store.logEvent(makeEvent({ userId, turnId, kind: "memory_selected", payload: { selected: context.trace.selected, overridden: context.trace.overridden } }));
     }
-    store.logEvent(makeEvent({ userId, turnId, kind: "context_compiled", payload: { ...context.trace, capsuleTokens: context.capsuleTokens }, tokenCount: context.totalInputTokens, latencyMs: context.compileMs }));
+    store.logEvent(makeEvent({ userId, turnId, kind: "context_compiled", payload: { ...context.trace, capsuleTokens: context.capsuleTokens, teachingStart: task.teachingStart }, tokenCount: context.totalInputTokens, latencyMs: context.compileMs }));
     appliedLabels = context.applied.map((a) => a.effect);
     systemPrompt = context.system;
     userPrompt = context.user;
@@ -284,7 +328,18 @@ async function executeTurn(opts: RunTurnOptions, turnId: string): Promise<void> 
       assistantParts.push(content);
       onEvent({ type: "assistant.delta", turnId, delta: content });
     }
-  } catch {
+  } catch (err) {
+    // fail-fast 模式下 provider 失败会抛 ProviderFailure：给出可操作的原因
+    // （"密钥无效"/"网络不通"），而不是笼统的 INTERNAL——后者对用户毫无指引。
+    if (err instanceof ProviderFailure) {
+      onEvent({
+        type: "turn.error",
+        turnId,
+        code: "MODEL_UNAVAILABLE",
+        message: providerFailureMessage(err.reason),
+      });
+      return;
+    }
     onEvent({ type: "turn.error", turnId, code: "INTERNAL", message: "生成回答时发生内部错误" });
     return;
   }
@@ -295,12 +350,15 @@ async function executeTurn(opts: RunTurnOptions, turnId: string): Promise<void> 
     assistantParts.push(fallback);
     onEvent({ type: "assistant.delta", turnId, delta: fallback });
   }
-  store.logEvent(makeEvent({ userId, turnId, kind: "model_called", payload: { provider: meta.provider, model: meta.model, fallback: meta.fallback, thinkingTtftMs: meta.thinkingTtftMs, continuationCount: meta.continuationCount, contentTtftMs: meta.contentTtftMs }, latencyMs: meta.ttftMs }));
+  // thinkingChars：模型本轮实际产出的思考字符数。它决定续写策略，也是排查
+  // "思考吃满预算导致正文被挤掉"的关键信号，必须进事件表才有诊断价值。
+  store.logEvent(makeEvent({ userId, turnId, kind: "model_called", payload: { provider: meta.provider, model: meta.model, fallback: meta.fallback, thinkingTtftMs: meta.thinkingTtftMs, continuationCount: meta.continuationCount, contentTtftMs: meta.contentTtftMs, thinkingChars: meta.actualThinkingChars }, latencyMs: meta.ttftMs }));
 
   const depth = task.desiredDepth !== "auto" ? task.desiredDepth : "L2";
   const presentation: TurnPresentation = {
     mode: "explain",
     depth,
+    teachingStart: fromFeedback ? undefined : task.teachingStart,
     focus: gate.focus,
     truncated: meta.truncated,
     plan: gate.plan,
@@ -377,7 +435,7 @@ function finalizeTurn(
   try {
     // payload.mode 用于判断"上一轮是不是澄清轮"——用户随后打「1」时据此决定
     // 是否当成选项选择，而不是新问题。
-    store.logEvent(makeEvent({ userId, turnId, kind: "response_completed", payload: { chars: assistantText.length, mode }, latencyMs: startedAt !== undefined ? Math.round(performance.now() - startedAt) : undefined }));
+    store.logEvent(makeEvent({ userId, turnId, kind: "response_completed", payload: { chars: codePointLength(assistantText), mode }, latencyMs: startedAt !== undefined ? Math.round(performance.now() - startedAt) : undefined }));
   } catch {
     // 忽略
   }

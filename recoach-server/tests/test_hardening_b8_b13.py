@@ -215,3 +215,60 @@ def test_sse_error_reuses_response_request_id(client: TestClient, monkeypatch):
 
     assert events[-1]["type"] == "turn.error"
     assert events[-1]["requestId"] == response.headers["x-request-id"]
+
+
+def _create_stuck_completed_turn(client: TestClient, client_turn_id: str) -> tuple[str, str]:
+    """造出"completed 但没有 presentation"的不一致行。"""
+    session_id = _create_session(client)
+    payload = {"message": {"content": "解释梯度下降。"}, "locale": "zh-CN"}
+    turn_id = turn_store.create_turn(session_id, "race_user", client_turn_id, payload)
+    turn_store.finish_turn(turn_id, status="completed", mode="explain", presentation=None)
+    stuck = turn_store.find_by_client_key(session_id, client_turn_id)
+    assert stuck is not None
+    assert stuck["status"] == "completed"
+    assert stuck["presentation_json"] is None
+    return session_id, turn_id
+
+
+def test_restart_turn_can_claim_completed_row_without_presentation(client: TestClient):
+    """这种不一致行必须可被认领，且仍然只可被认领一次。"""
+    _session_id, turn_id = _create_stuck_completed_turn(client, "client_stuck_claim")
+
+    assert turn_store.restart_turn(turn_id) is True
+    assert turn_store.restart_turn(turn_id) is False
+
+
+def test_http_retry_recovers_from_stuck_completed_state(client: TestClient):
+    """端到端：卡死的 completed 行必须能靠重试跑通，而不是永远 409。
+
+    回归：这种行既不能被重放（路由要求 completed 且有 presentation），
+    也不能被 restart_turn 认领（原实现只认 status='error'），
+    于是同一个 clientTurnId 永远卡在 409 TURN_IN_PROGRESS，只能改库才能出来。
+    """
+    session_id, turn_id = _create_stuck_completed_turn(client, "client_stuck_retry")
+
+    response = _turn_request(
+        client, session_id, content="解释梯度下降。", client_turn_id="client_stuck_retry",
+    )
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    assert events[-1]["type"] == "turn.completed"
+    assert events[-1]["turnId"] == turn_id
+    assert turn_store.find_by_client_key(session_id, "client_stuck_retry")["status"] == "completed"
+
+
+def test_restart_turn_still_refuses_normal_completed_rows(client: TestClient):
+    """正常的 completed 行（带 presentation）不得被认领——否则会重复执行。"""
+    session_id = _create_session(client)
+    client_turn_id = "client_normal_completed"
+    turn_id = turn_store.create_turn(
+        session_id, "race_user", client_turn_id,
+        {"message": {"content": "解释梯度下降。"}, "locale": "zh-CN"},
+    )
+    turn_store.finish_turn(
+        turn_id, status="completed", mode="explain",
+        response_text="答案", presentation={"mode": "explain", "focus": "f", "plan": []},
+    )
+
+    assert turn_store.restart_turn(turn_id) is False
+    assert turn_store.find_by_client_key(session_id, client_turn_id)["status"] == "completed"

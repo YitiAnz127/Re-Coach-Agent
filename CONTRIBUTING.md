@@ -36,22 +36,23 @@
 三个部分各有自己的测试命令：
 
 ```bash
-# 后端测试（18 个测试文件，217 passed）
+# 后端测试
 cd recoach-server
 .\.venv\Scripts\python.exe -m pytest -q          # macOS / Linux: ./.venv/bin/python -m pytest -q
 
-# 前端测试（4 个测试文件，22 passed，Node 内置 test runner）
+# 前端测试（Node 内置 test runner）
 cd recoach-frontend
 npm test
 npm run check                                    # TypeScript 类型检查
 
-# TUI 测试（6 个测试文件，92 passed，vitest）
+# TUI 测试（vitest）
 cd re-coach-tui
 npm test
 npm run typecheck
+npm run build
 ```
 
-所有测试必须通过才能合并。CI 目前跑后端与前端两个 job， TUI 测试请在本地手动执行（见 `.github/workflows/test.yml`）。
+所有测试必须通过才能合并。三个子项目都有 CI job（`backend` / `frontend` / `tui`，另加 `docker-build`），TUI 的 typecheck、build 与 vitest 会在提交时执行（见 `.github/workflows/test.yml`）。
 
 ## 改动配置或接口字段后
 

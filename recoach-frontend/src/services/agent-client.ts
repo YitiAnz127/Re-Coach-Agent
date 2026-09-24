@@ -1,5 +1,5 @@
 import { getDemoReply } from "../data/demo";
-import type { AgentStreamEvent, TurnPresentation } from "../types";
+import type { AgentStreamEvent, TeachingRating, TurnPresentation } from "../types";
 import {
   demoServiceMeta,
   parseServiceMeta,
@@ -193,6 +193,7 @@ export interface RestoredTurn {
   userText: string;
   assistantText: string;
   presentation: TurnPresentation;
+  calibration?: TeachingRating | null;
   createdAt?: string;
 }
 
@@ -203,7 +204,9 @@ export async function fetchSessionTurns(
 ): Promise<RestoredTurn[]> {
   const response = await fetch(
     `${apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/turns`,
-    { headers: { Accept: "application/json" }, signal },
+    // credentials 与其他调用保持一致：漏掉它会让恢复历史在需要凭证的部署下
+    // 单独 401，而同一会话的发送/校准却正常——最难排查的一类不一致。
+    { headers: { Accept: "application/json" }, credentials: "include", signal },
   );
   if (!response.ok) {
     const error = await errorFromResponse(
@@ -232,7 +235,9 @@ function isRestoredTurn(value: unknown): boolean {
     typeof t.userText === "string" &&
     typeof t.assistantText === "string" &&
     typeof t.presentation === "object" &&
-    t.presentation !== null
+    t.presentation !== null &&
+    (t.calibration === undefined || t.calibration === null ||
+      t.calibration === "too_basic" || t.calibration === "just_right" || t.calibration === "too_fast")
   );
 }
 
@@ -262,6 +267,24 @@ export async function* streamTurn(input: SendTurnInput): AsyncGenerator<AgentStr
   }
 
   yield* parseSseResponse(response);
+}
+
+export async function calibrateTurn(
+  sessionId: string,
+  turnId: string,
+  rating: TeachingRating,
+): Promise<void> {
+  if (demoMode) throw new AgentApiError("请连接真实后端后再调整讲解起点。", "CALIBRATION_UNAVAILABLE", false);
+  const response = await fetch(
+    `${apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/calibration`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ rating }),
+    },
+  );
+  if (!response.ok) throw await errorFromResponse(response, "无法保存这次反馈。", "CALIBRATION_FAILED");
 }
 
 

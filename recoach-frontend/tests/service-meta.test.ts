@@ -37,6 +37,7 @@ test("parses DeepSeek service metadata", () => {
     thinkingEnabled: true,
     reasoningEffort: "high",
     fairAbFork: true,
+    teachingCalibration: false,
     keysPresent: { deepseek: true, anthropic: false, openaiCompatible: false },
   });
 });
@@ -71,6 +72,12 @@ test("treats an older backend without fair fork capability as unsupported", () =
   delete (payload.data.capabilities as { fairAbFork?: boolean }).fairAbFork;
 
   assert.equal(parseServiceMeta(payload).fairAbFork, false);
+});
+
+test("only offers teaching calibration when the backend declares support", () => {
+  const payload = structuredClone(deepseekPayload);
+  (payload.data.capabilities as { teachingCalibration?: boolean }).teachingCalibration = true;
+  assert.equal(parseServiceMeta(payload).teachingCalibration, true);
 });
 
 test("formats DeepSeek as a user-facing provider name", () => {

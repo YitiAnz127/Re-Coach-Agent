@@ -67,7 +67,7 @@ def _detect_depth(text: str) -> str:
     if re.search(r"(直觉|直观|通俗|类比|小白|入门)", text):
         return "L1"
     if re.search(r"(深入|详细|完整|彻底)", text):
-        return "L4"
+        return "L3"
     return "auto"
 
 
@@ -210,8 +210,9 @@ def run_gate(user_text: str, *, clarify_streak: int, known_context: list[str] | 
     text = user_text.strip()
     compact = re.sub(r"[\s，。？！,.?!、：:；;]", "", text)
     context_items = known_context or []
+    social = bool(_SOCIAL_INTENT.search(compact))
     domain, concept = _detect_concept(text)
-    if not concept and context_items:
+    if not concept and context_items and not social:
         context_domain, context_concept = _detect_concept(" ".join(context_items))
         if context_concept:
             domain, concept = context_domain, context_concept
@@ -234,7 +235,7 @@ def run_gate(user_text: str, *, clarify_streak: int, known_context: list[str] | 
     base = GateResult(decision="READY", task=task, focus=focus, plan=_build_plan(task))
 
     # 寒暄/开场消息：不是教学请求，不套教学模板。
-    if _SOCIAL_INTENT.search(compact) and not concept:
+    if social:
         task.task_scope = "寒暄与开场"
         base.focus = "寒暄与开场"
         base.plan = ["友好回应", "引导学习者提出想学的概念"]

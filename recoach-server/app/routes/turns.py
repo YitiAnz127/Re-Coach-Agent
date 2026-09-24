@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from typing import Any, AsyncIterator
+import threading
+from typing import Any, AsyncIterator, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from .. import db
 from ..config import get_settings
 from ..errors import error_payload
 from ..ids import new_id
 from ..services import coach as coach_service
+from ..services import brief as brief_service
 from ..services import orchestrator, turn_gate, turns as turn_store
+from ..services import teaching as teaching_service
 from ..sse import encode, frame
 from .sessions import (
     current_user_id_or_error,
@@ -42,6 +46,12 @@ class TurnRequest(BaseModel):
     clientTurnId: str = Field(min_length=4, max_length=128)
     # 同 CreateSessionRequest：locale 会落库，必须限长。
     locale: str = Field(default="zh-CN", max_length=35)
+
+
+class CalibrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rating: Literal["too_basic", "just_right", "too_fast"]
 
 
 def _request_id(request: Request) -> str:
@@ -98,7 +108,9 @@ def _handle_duplicate_key(
             media_type="text/event-stream",
             headers=_sse_headers(request),
         )
-    if existing["status"] == "streaming":
+    # 已超过任何一轮合法时长的孤儿行不算"进行中"，放它落到下面的 claim，
+    # 否则这个 clientTurnId 永远走不出来（见 turns.stale_streaming_cutoff）。
+    if existing["status"] == "streaming" and not turn_store.is_stale_streaming(existing):
         return _error(request, 409, "TURN_IN_PROGRESS")
     if not turn_store.restart_turn(existing["id"]):
         return _error(request, 409, "TURN_IN_PROGRESS")
@@ -121,6 +133,36 @@ def list_turns(session_id: str, request: Request):
             "turns": turn_store.list_completed_turns(session_id),
         }
     }
+
+
+@router.post("/sessions/{session_id}/turns/{turn_id}/calibration")
+def calibrate_turn(session_id: str, turn_id: str, body: CalibrationRequest, request: Request):
+    session = owned_session(request, session_id)
+    if session is None:
+        return _error(request, 404, "SESSION_NOT_FOUND")
+    if not get_settings().memory_on or brief_service.get_session_fork(session_id) is not None:
+        return _error(request, 422, "INVALID_REQUEST")
+    row = db.query_one(
+        """SELECT status, mode, presentation_json FROM turns
+           WHERE id=? AND session_id=? AND user_id=?""",
+        (turn_id, session_id, session[0]),
+    )
+    if row is None:
+        return _error(request, 404, "SESSION_NOT_FOUND")
+    if row["status"] != "completed" or row["mode"] != "explain" or not row["presentation_json"]:
+        return _error(request, 422, "INVALID_REQUEST")
+    start = json.loads(row["presentation_json"]).get("teachingStart")
+    if not isinstance(start, dict) or not start.get("concept") or not start.get("domain"):
+        return _error(request, 422, "INVALID_REQUEST")
+    result = teaching_service.record_calibration(
+        turn_id=turn_id,
+        user_id=session[0],
+        domain=start["domain"],
+        concept=start["concept"],
+        rating=body.rating,
+        base_level=start["level"],
+    )
+    return {"data": result}
 
 
 @router.post("/sessions/{session_id}/turns")
@@ -151,7 +193,8 @@ async def create_turn(session_id: str, body: TurnRequest, request: Request):
                 media_type="text/event-stream",
                 headers=_sse_headers(request),
             )
-        if existing["status"] == "streaming":
+        # 同上：孤儿行按"可认领"处理，不当作进行中
+        if existing["status"] == "streaming" and not turn_store.is_stale_streaming(existing):
             return _error(request, 409, "TURN_IN_PROGRESS")
 
     # ---- 到这里可以确定本次请求会真正执行一次 Turn ----
@@ -201,6 +244,37 @@ async def create_turn(session_id: str, body: TurnRequest, request: Request):
     async def _guarded_stream():
         # run_turn 内部没有顶层 try/finally，用外层包装保证槽位一定归还
         # （客户端断开时 StreamingResponse 会 close 生成器，finally 同样执行）。
+        #
+        # 心跳由独立线程按墙钟发送，**不挂在事件上**：上游可能出现"持续有数据
+        # 但不产出任何事件"的情况（代理注入的 `: keep-alive` 注释行、空 delta
+        # 分片），此时 httpx 的 read timeout 不会触发（数据在流动），事件却一个
+        # 都不来——挂在事件上的心跳会静默停掉，让这一行被判成孤儿并抢走。
+        # 心跳的含义是"本进程仍在处理这一轮"，与是否有数据无关。
+        #
+        # 用线程而不是 asyncio 任务：清理只需 set()，不必在 async 生成器的
+        # finally 里 await（客户端断开走的是 GeneratorExit 路径，在那里 await
+        # 会触发 "async generator ignored GeneratorExit"）；而且事件循环被阻塞时
+        # 心跳依然有效——那恰恰是"这一轮看起来像死了"的时候。
+        stop_heartbeat = threading.Event()
+
+        def heartbeat() -> None:
+            while True:
+                try:
+                    turn_store.touch_turn(turn_id)
+                except Exception:  # noqa: BLE001 — 心跳是尽力而为，绝不能因此停摆
+                    # 一次瞬时 DB 错误（锁竞争、IO 抖动）不能让心跳永久停掉：
+                    # 停摆超过阈值后这一轮会被判成孤儿并抢走 → 重复执行，
+                    # 而这正是心跳要防的事。线程带着未捕获异常退出还会往日志里
+                    # 打一段堆栈。真正的持续性 DB 故障会在本轮其它 DB 调用上
+                    # 更响亮地暴露，不需要在这里报告。
+                    pass
+                if stop_heartbeat.wait(turn_store.TURN_HEARTBEAT_SECONDS):
+                    return
+
+        beat = threading.Thread(
+            target=heartbeat, name=f"turn-heartbeat-{turn_id}", daemon=True
+        )
+        beat.start()
         try:
             async for event in orchestrator.run_turn(
                 user_id=user_id,
@@ -211,6 +285,7 @@ async def create_turn(session_id: str, body: TurnRequest, request: Request):
             ):
                 yield event
         finally:
+            stop_heartbeat.set()
             turn_gate.release(concurrency_limit)
 
     return StreamingResponse(

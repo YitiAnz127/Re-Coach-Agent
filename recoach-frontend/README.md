@@ -24,6 +24,7 @@
 - 支持澄清轮、流式回答、Markdown 与 KaTeX 公式渲染（`react-markdown` + `remark-math` + `rehype-katex`）。
 - 思考过程以可折叠块实时展示（`assistant.thinking` 事件），正文出现后自动折叠，避免"静默等待"。
 - 个性化依据（personalization）、执行摘要、性能指标和建议动作随回答展示。
+- 概念讲解后可点“太基础 / 正合适 / 跳得太快”，服务器按原回答的教学起点记录反馈；同一按钮可改评，仅调整该概念后续讲解。后端关闭记忆或未声明能力时隐藏入口。
 - 刷新后恢复对话：`sessionId` 落在 `localStorage`，重新加载时用 `GET /api/v1/sessions/{sessionId}/turns` 拉回该会话已完成的轮次并原样重放（用户原始输入按原文恢复，编号选择不会被替换成长文本）。`localStorage` 不可用时（隐私模式等）只是刷新后不恢复，不影响本次会话。
 - Performance 视图读取 `/api/v1/meta`，展示后端配置的 provider、model 与 DeepSeek Thinking 强度；而**本轮实际**使用了哪个 provider 取自 `presentation.metrics`——真实模型失败降级时二者会不一致，界面以后者为准。
 - 普通 Chat 不提供逐轮 Memory On/Off 开关，统一使用后端配置的默认记忆策略。
@@ -51,13 +52,13 @@
 
 ### 测试与构建
 
-当前有 **4 个测试文件、22 个 Node 内置单元测试**（`npm test` 实测：`pass 22 / fail 0`），覆盖：
+当前有 **4 个测试文件、24 个 Node 内置单元测试**（`npm test` 实测：`pass 24 / fail 0`），覆盖：
 
 - SSE 尾部 frame flush、缺少终止事件、重复终止事件；
 - 完成事件结构校验；
 - 重试复用 `clientTurnId` 且不复制用户消息；
 - 不可重试错误拦截；
-- 后端 LLM meta 的运行时校验、Fair Fork 能力声明解析与 provider 展示名称格式化；
+- 后端 LLM meta 的运行时校验、Fair Fork 与概念反馈能力声明的解析、provider 展示名称格式化；
 - 本轮降级提示（fallback notice）的生成条件。
 
 此外已通过 TypeScript 检查和 Vite 生产构建；`npm run smoke` 提供前后端 HTTP 级联调。
@@ -161,9 +162,9 @@ scripts/e2e-smoke.mjs                前后端 smoke 联调
 ### 依赖后端 P1/P2 后才能真实展示
 
 - 受限微型实验的真实工具事件、代码和结果；当前仅 Demo 模式有实验卡片。
-- 主 Coach 同轮 `retrospective`（复盘）：v1.1 已返回结构化字段；复杂模型级复盘仍不单独调用复盘模型。
+- 主 Coach 同轮 `retrospective`（复盘）：当前返回结构化字段；复杂模型级复盘仍不单独调用复盘模型。
 - 完整的记忆应用验证状态，而不只是本轮 selected personalization 投影。
-- 记忆召回率、选择精度、错误泛化率等质量指标；v1.1 已提供运行指标 p50/p95 API，质量指标待评测真值。
+- 记忆召回率、选择精度、错误泛化率等质量指标；运行指标 p50/p95 API 已提供，质量指标待评测真值。
 
 ### 前端自身未完成
 

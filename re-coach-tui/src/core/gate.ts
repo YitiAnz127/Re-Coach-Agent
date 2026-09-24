@@ -7,6 +7,7 @@ import type {
   ResolvedTask,
   TaskScope,
 } from "../types.js";
+import { codePointLength } from "../text.js";
 
 const CONCEPT_LEXICON: Record<string, string[]> = {
   deep_learning: [
@@ -53,7 +54,7 @@ function detectDepth(text: string): Depth {
   if (/(推导|证明|公式|数学)/.test(text)) return "L4";
   if (/(代码|实现|pytorch|编程|写一个)/i.test(text)) return "L3";
   if (/(直觉|直观|通俗|类比|小白|入门)/.test(text)) return "L1";
-  if (/(深入|详细|完整|彻底)/.test(text)) return "L4";
+  if (/(深入|详细|完整|彻底)/.test(text)) return "L3";
   return "auto";
 }
 
@@ -120,8 +121,9 @@ export function runGate(userText: string, args: RunGateArgs): GateResult {
   const text = userText.trim();
   const compact = text.replace(/[\s，。？！,.?!、：:；;]/g, "");
   const contextItems = args.knownContext ?? [];
+  const social = SOCIAL_INTENT.test(compact);
   let [domain, concept] = detectConcept(text);
-  if (!concept && contextItems.length > 0) {
+  if (!concept && contextItems.length > 0 && !social) {
     const [contextDomain, contextConcept] = detectConcept(contextItems.join(" "));
     if (contextConcept) {
       domain = contextDomain;
@@ -153,7 +155,7 @@ export function runGate(userText: string, args: RunGateArgs): GateResult {
     plan: buildPlan(task),
   };
 
-  if (SOCIAL_INTENT.test(compact) && !concept) {
+  if (social) {
     task.taskScope = "寒暄与开场";
     base.focus = "寒暄与开场";
     base.plan = ["友好回应", "引导学习者提出想学的概念"];
@@ -167,17 +169,20 @@ export function runGate(userText: string, args: RunGateArgs): GateResult {
     return base;
   }
 
+  // 阈值必须按码点算，与后端 len(compact) 对齐——用 .length 会让含 emoji 的
+  // 输入在两端跨过不同分支（见 text.ts 的说明）。
+  const compactLength = codePointLength(compact);
   const broad = BROAD_INTENT.test(compact);
   const specific =
-    SPECIFIC_MARKER.test(compact) || prefs.length > 0 || Boolean(concept && compact.length > 24);
+    SPECIFIC_MARKER.test(compact) || prefs.length > 0 || Boolean(concept && compactLength > 24);
   const confused =
     /(我不懂|我不理解|没搞懂|没听懂|卡在|卡住|不明白|不懂的是|不理解的是)/.test(compact);
 
-  if (compact.length <= 8 && broad && !specific) {
+  if (compactLength <= 8 && broad && !specific) {
     base.decision = "NEEDS_CLARIFICATION";
-  } else if (compact.length <= 14 && broad && !specific && !concept) {
+  } else if (compactLength <= 14 && broad && !specific && !concept) {
     base.decision = "NEEDS_CLARIFICATION";
-  } else if (confused && !specific && compact.length <= 40) {
+  } else if (confused && !specific && compactLength <= 40) {
     base.decision = "NEEDS_CLARIFICATION";
   } else if (isNonInformative(compact)) {
     // 纯编号/符号（"1"、"A"、"???"）没有任何语义内容。

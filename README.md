@@ -6,7 +6,7 @@
 
 [![Tests](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**版本：** v1.1.0（phase `p1`，策略版本 `policy_1.1.0`）——取自运行时 `GET /api/v1/meta`
+**版本：** v1.2.0（phase `p1`，策略版本 `policy_1.2.0`）——取自运行时 `GET /api/v1/meta`
 
 **核心原则：** 先把问题弄清楚，再检索相关记忆；少调用、低延迟、自动记忆、作用域明确。
 
@@ -78,7 +78,7 @@ npm start
 ## 📊 项目状态
 
 - ✅ 四个可独立运行的部分：后端、Web 前端、TUI、AI Coach Skill
-- ✅ Docker 容器化；GitHub Actions 跑后端测试与一致性审计、前端类型检查与测试、镜像可构建
+- ✅ Docker 容器化；GitHub Actions 跑后端测试与一致性审计、前端类型检查与测试、TUI 类型检查与测试、镜像可构建
 - ✅ 能力诚实性可查询：`GET /api/v1/meta` 的 `capabilities` 逐项声明已实现与未实现
 - 🟢 单用户本地自用，可运行、可部署
 
@@ -94,6 +94,7 @@ npm start
 最小 Session 状态理解
   → Clarification Gate（必要时只问一个高信息量问题）
   → 形成 ResolvedTask
+  → 按当前表述与局部反馈确定本轮教学起点
   → 五级作用域检索稳定记忆
   → 确定性 Context Compiler 编译上下文（无额外 Planner LLM）
   → 单次主 Coach 流式输出
@@ -106,6 +107,7 @@ npm start
 - 📝 **作用域记忆**：五级作用域（用户 / 领域 / 概念 / 命题 / 任务）防止错误泛化
 - ⚡ **流式响应**：SSE 实时推送，思考过程（`reasoning_content`）与正文分别可见、分别计时
 - 🎯 **确定性编译**：记忆如何进入上下文由规则决定，可追溯、可复现
+- 📍 **逐问教学起点**：把目标深度与已有前置分开；可对单个概念反馈“太基础 / 正合适 / 跳得太快”
 - 🔄 **自动学习**：从反馈中提取稳定偏好，同作用域更新保留 `archived + superseded_by` 演化链
 - 🔬 **公平对照**：Fair Fork 冻结当前会话，由服务端并行生成固定 On/Off 两个只读分支
 - 🔒 **能力诚实**：未实现的能力在 `/api/v1/meta` 中一律为 `false`，界面不显示占位假数据
@@ -121,7 +123,7 @@ npm start
 | `re-coach-tui/` | 终端 TUI（Node ≥ 22.19） | 独立应用，在本进程内用 TypeScript 实现同一套业务逻辑 |
 | `ai-coach-skill-repo/` | AI Coach Skill | 面向 Hermes / Codex / Claude Desktop 的行为层，与上面三个应用无代码耦合 |
 | `docs/` | 中英双语文档 | 快速开始、部署指南 |
-| `tools/` | `consistency_audit.py` | 跨文件一致性审计 |
+| `tools/` | 一致性审计与教学评估脚本 | 跨文件检查、成对评估汇总 |
 
 ---
 
@@ -148,6 +150,8 @@ npm start
 | [后端 LLM 配置](recoach-server/README_LLM_CONFIG.md) | DeepSeek / OpenAI 兼容 / Anthropic 接入 |
 | [前端文档](recoach-frontend/README.md) | 组件、SSE 契约、逻辑 Turn 重试 |
 | [TUI 文档](re-coach-tui/README.md) | 终端版能力与后端模块对应关系 |
+| [ExPerT 整合分析](docs/expert-recoach-integration.md) | 相似点、A/B/D 升级方向与边界 |
+| [教学起点评估](docs/teaching-start-evaluation.md) | 成对评估数据格式与离线汇总 |
 | [AI Coach Skill](ai-coach-skill-repo/README.md) · [EN](ai-coach-skill-repo/README_EN.md) | 行为层设计说明 |
 | [贡献指南](CONTRIBUTING.md) | 开发流程与代码规范 |
 
@@ -156,17 +160,17 @@ npm start
 ## 🧪 测试
 
 ```bash
-# 后端：18 个测试文件，217 passed
+# 后端
 cd recoach-server && ./.venv/Scripts/python.exe -m pytest -q
 
-# 前端：4 个测试文件，22 passed（Node 内置 test runner）
+# 前端（Node 内置 test runner）
 cd recoach-frontend && npm test
 
-# TUI：6 个测试文件，92 passed（vitest）
+# TUI（vitest）
 cd re-coach-tui && npm test
 ```
 
-> 数字为本机实测结果（Python 3.11 / Node 24）。后端 165 个测试函数经 `@pytest.mark.parametrize` 展开后是 217 条用例，TUI 的 `it.each` 同理（64 → 92）。 CI 目前只跑后端与前端两个 job （[.github/workflows/test.yml](.github/workflows/test.yml)），TUI 测试尚未接入 CI。
+> 这里刻意不写用例数量——写死的数字会随每次加测试而腐烂，各子项目 README 里的数字都取自实测输出。三个子项目都有 CI job（[.github/workflows/test.yml](.github/workflows/test.yml)）：`backend`（Python 3.10 上 pytest + 跨文件一致性审计）、`frontend`（Node 22 上类型检查 + 测试）、`tui`（typecheck + build + vitest），外加 `docker-build` 验证镜像可构建。
 
 ### 跨文件一致性审计
 

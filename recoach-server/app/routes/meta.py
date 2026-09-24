@@ -20,7 +20,7 @@ def meta():
     return {
         "data": {
             "product": "知返 Re:Coach",
-            "version": "1.1.0",
+            "version": "1.2.0",
             "phase": "p1",
             "policyVersion": POLICY_VERSION,
             "schemaVersion": migrations[-1]["version"] if migrations else 0,
@@ -48,6 +48,7 @@ def meta():
                 "llmProvider": provider,
                 "llmModel": model,
                 "memoryOn": settings.memory_on,
+                "teachingCalibration": settings.memory_on,
                 "fairAbFork": True,
                 "clarificationGate": True,
                 "deterministicContextCompiler": True,

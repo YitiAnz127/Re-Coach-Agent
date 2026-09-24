@@ -135,7 +135,7 @@ describe("会话恢复", () => {
 
   it("能取回最近的会话与它的历史轮次", () => {
     const store = mkStore();
-    const session = store.createSession("zh-CN");
+    const session = store.createSession();
     store.saveMessage(session.id, "turn_1", "user", "讲讲反向传播");
     store.saveMessage(session.id, "turn_1", "assistant", "反向传播是……");
 
@@ -147,7 +147,7 @@ describe("会话恢复", () => {
 
   it("跳过 fork 会话，避免恢复到对照分支", () => {
     const store = mkStore();
-    const source = store.createSession("zh-CN");
+    const source = store.createSession();
     store.saveMessage(source.id, "turn_1", "user", "问题");
     store.createSessionFork(source.id);
     expect(store.latestResumableSession()?.id).toBe(source.id);
@@ -155,7 +155,7 @@ describe("会话恢复", () => {
 
   it("deleteSession 能清掉空会话", () => {
     const store = mkStore();
-    const session = store.createSession("zh-CN");
+    const session = store.createSession();
     store.deleteSession(session.id);
     expect(store.getSession(session.id)).toBeUndefined();
   });
@@ -173,7 +173,7 @@ describe("待选澄清选项的识别", () => {
   const mkStore = () => new Store(loadConfig({ RECOACH_DATA_DIR: dir, RECOACH_LLM_PROVIDER: "template" }));
 
   function seed(store: Store, mode: "clarify" | "explain", options?: ClarificationOption[]) {
-    const session = store.createSession("zh-CN");
+    const session = store.createSession();
     const turnId = `turn_${mode}`;
     store.saveMessage(session.id, turnId, "user", "讲讲反向传播");
     if (options) {

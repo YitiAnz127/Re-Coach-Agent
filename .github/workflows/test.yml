@@ -59,6 +59,38 @@ jobs:
       - name: 运行前端测试
         run: npm test
 
+  # TUI 是后端管线的**独立实现**，两边靠人工保持 1:1。实测过的漂移都出在这里
+  # （漏掉定界符包裹、遗忘关键字缺少长度下限、token 公式不一致、默认模型名不一致），
+  # 而它此前完全没有 CI 门禁——测试与类型检查都不会在提交时跑。
+  tui:
+    name: TUI 类型检查与测试
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: re-coach-tui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 与 package.json 的 engines（>=22.19.0）对齐
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: re-coach-tui/package-lock.json
+
+      - run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      # typecheck 走 tsconfig.json，构建走 tsconfig.build.json，两者包含的文件
+      # 集合不同；只做其一会让另一份配置里的错误漏到发布产物里。
+      - name: 构建
+        run: npm run build
+
+      - name: 运行 TUI 测试
+        run: npm test
+
   docker-build:
     name: 镜像可构建
     runs-on: ubuntu-latest

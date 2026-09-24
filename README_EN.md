@@ -6,7 +6,7 @@
 
 [![Tests](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml/badge.svg)](https://github.com/YitiAnz127/Re-Coach-Agent/actions/workflows/test.yml) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Version:** v1.1.0 (phase `p1`, policy version `policy_1.1.0`) — read from the running `GET /api/v1/meta`
+**Version:** v1.2.0 (phase `p1`, policy version `policy_1.2.0`) — read from the running `GET /api/v1/meta`
 
 **Core principles:** First understand the question, then retrieve relevant memories; minimal calls, low latency, automatic memory, clear scope.
 
@@ -78,7 +78,7 @@ npm start
 ## 📊 Project Status
 
 - ✅ Four independently runnable parts: backend, web frontend, TUI, AI Coach Skill
-- ✅ Docker containerization; GitHub Actions runs backend tests plus the consistency audit, frontend type-check and tests, and both image builds
+- ✅ Docker images; GitHub Actions runs backend tests and the consistency audit, frontend type checks and tests, TUI type checks and tests, and verifies the images build
 - ✅ Honest capability reporting: the `capabilities` object in `GET /api/v1/meta` declares what is and is not implemented
 - 🟢 Single-user local use, runnable and deployable
 
@@ -94,6 +94,7 @@ What actually happens in one Turn:
 Minimal session state
   → Clarification Gate (ask exactly one high-information question when needed)
   → ResolvedTask
+  → Query-wise teaching start from explicit statements and scoped feedback
   → Five-level scoped retrieval of stable memories
   → Deterministic Context Compiler builds the context (no extra planner LLM)
   → One streaming main-Coach call
@@ -106,6 +107,7 @@ Minimal session state
 - 📝 **Scoped memory**: five-level scope (user / domain / concept / proposition / task) prevents wrong generalization
 - ⚡ **Streaming responses**: SSE real-time push; the model's `reasoning_content` is visible and timed separately from the body
 - 🎯 **Deterministic compilation**: how memories enter the context is rule-based, traceable and reproducible
+- 📍 **Query-wise teaching start**: requested depth stays separate from prior knowledge; concept feedback can adjust later explanations
 - 🔄 **Automatic learning**: stable preferences are extracted from feedback; in-scope updates keep an `archived + superseded_by` chain
 - 🔬 **Fair comparison**: a Fair Fork freezes the current session and the server creates two fixed, read-only On/Off branches
 - 🔒 **Honest capabilities**: anything unimplemented is `false` in `/api/v1/meta`, and the UI never shows placeholder data
@@ -121,7 +123,7 @@ Minimal session state
 | `re-coach-tui/` | Terminal TUI (Node ≥ 22.19) | Standalone app that implements the same business logic in-process with TypeScript |
 | `ai-coach-skill-repo/` | AI Coach skill | Behaviour layer for Hermes / Codex / Claude Desktop, with no code coupling to the three apps above |
 | `docs/` | Bilingual docs | Quick start and deployment guide |
-| `tools/` | `consistency_audit.py` | Cross-file consistency audit |
+| `tools/` | Audit and teaching evaluation scripts | Cross-file checks and paired evaluation summaries |
 
 ---
 
@@ -148,6 +150,8 @@ Minimal session state
 | [Backend LLM config](recoach-server/README_LLM_CONFIG.md) | DeepSeek / OpenAI-compatible / Anthropic setup |
 | [Frontend docs](recoach-frontend/README.md) | Components, SSE contract, logical Turn retry |
 | [TUI docs](re-coach-tui/README.md) | Terminal capabilities and module mapping to the backend |
+| [ExPerT integration analysis](docs/expert-recoach-integration.md) | Similarities and A/B/D upgrade directions (Chinese) |
+| [Teaching-start evaluation](docs/teaching-start-evaluation.md) | Paired data format and offline summary tool (Chinese) |
 | [AI Coach Skill](ai-coach-skill-repo/README.md) · [EN](ai-coach-skill-repo/README_EN.md) | Behaviour-layer design |
 | [Contributing](CONTRIBUTING.md) | Workflow and code conventions |
 
@@ -156,17 +160,17 @@ Minimal session state
 ## 🧪 Tests
 
 ```bash
-# Backend: 18 test files, 217 passed
+# Backend
 cd recoach-server && ./.venv/Scripts/python.exe -m pytest -q
 
-# Frontend: 4 test files, 22 passed (Node built-in test runner)
+# Frontend (Node built-in test runner)
 cd recoach-frontend && npm test
 
-# TUI: 6 test files, 92 passed (vitest)
+# TUI (vitest)
 cd re-coach-tui && npm test
 ```
 
-> These are measured results (Python 3.11 / Node 24). The backend's 165 test functions expand to 217 cases through `@pytest.mark.parametrize`, and the TUI's `it.each` does the same (64 → 92). CI currently runs only the backend and frontend jobs ([.github/workflows/test.yml](.github/workflows/test.yml)); the TUI suite is not wired into CI yet.
+> Test counts are deliberately omitted here — hardcoded numbers rot every time a test is added; the numbers in each subproject README come from real runs. All three subprojects have CI jobs ([.github/workflows/test.yml](.github/workflows/test.yml)): `backend` (pytest + cross-file consistency audit on Python 3.10), `frontend` (type checks + tests on Node 22), and `tui` (typecheck + build + vitest), plus `docker-build` to verify the images still build.
 
 ### Cross-file consistency audit
 

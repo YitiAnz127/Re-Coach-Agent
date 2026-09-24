@@ -162,6 +162,39 @@ MIGRATIONS: tuple[tuple[int, str, str], ...] = (
         ALTER TABLE session_forks ADD COLUMN concept_content_json TEXT;
         """,
     ),
+    (
+        5,
+        "concept_teaching_calibrations",
+        """
+        CREATE TABLE IF NOT EXISTS teaching_calibrations (
+          turn_id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          domain TEXT NOT NULL,
+          concept TEXT NOT NULL,
+          rating TEXT NOT NULL,
+          base_level TEXT NOT NULL,
+          level TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_teaching_calibrations_scope
+          ON teaching_calibrations (user_id, domain, concept, updated_at);
+        """,
+    ),
+    (
+        6,
+        "turn_owner_instance",
+        """
+        ALTER TABLE turns ADD COLUMN owner_instance TEXT NOT NULL DEFAULT '';
+        CREATE INDEX IF NOT EXISTS idx_turns_streaming_owner
+          ON turns (status, owner_instance);
+
+        CREATE TABLE IF NOT EXISTS runtime_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+        """,
+    ),
 )
 
 FTS_SCHEMA = """

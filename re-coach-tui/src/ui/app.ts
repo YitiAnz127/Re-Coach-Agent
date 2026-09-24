@@ -139,9 +139,13 @@ export async function startApp(
       // 依据本轮实际值，而不是配置里的 provider（后者降级后仍然是配置值）。
       const m = presentation.metrics;
       if (m.fallback) {
-        const requested = m.model || "已配置的模型";
+        // 渲染前净化：model 来自配置、fallbackReason 来自失败分类，都算"外部字符串"，
+        // sanitize.ts 的政策是一律剥掉终端控制序列（渲染面不能有例外）。
+        const requested = sanitizeTerminalText(m.model || "已配置的模型");
         bits.push(
-          theme.error(`⚠ 本轮为模板降级（${m.fallbackReason || "ERROR"}，原本请求 ${requested}）`),
+          theme.error(
+            `⚠ 本轮为模板降级（${sanitizeTerminalText(m.fallbackReason || "ERROR")}，原本请求 ${requested}）`,
+          ),
         );
       } else if (m.provider === "template") {
         bits.push(theme.dim("模板模式"));
@@ -152,9 +156,12 @@ export async function startApp(
     if (presentation?.truncated) {
       bits.push(theme.error("⚠ 回答不完整（输出长度受限，已被截断）"));
     }
+    if (presentation?.teachingStart?.concept) {
+      bits.push(theme.dim("调整起点：/pace basic|ok|fast"));
+    }
     footer.addChild(
       new Text(
-        theme.dim(bits.length ? bits.join("   ") : "输入问题，或输入偏好让 Re: Coach 记住"),
+        theme.dim(bits.length ? bits.join("   ") : "输入问题；讲解后可用 /pace basic|ok|fast 调整下次起点"),
         1,
         0,
       ),

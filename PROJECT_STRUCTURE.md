@@ -16,16 +16,20 @@ Re-Coach-Agent/
 │
 ├── .github/
 │   └── workflows/
-│       └── test.yml            # CI：后端测试+一致性审计 / 前端类型检查+测试 / 镜像构建
+│       └── test.yml            # CI：后端测试+一致性审计 / 前端类型检查+测试 / TUI 类型检查+测试 / 镜像构建
 │
-├── docs/                        # 中英双语指南
+├── docs/                        # 指南与分析文档
 │   ├── quickstart.md           # 快速开始（中文）
 │   ├── quickstart.en.md        # 快速开始（英文）
 │   ├── deployment.md           # 部署指南（中文）
-│   └── deployment.en.md        # 部署指南（英文）
+│   ├── deployment.en.md        # 部署指南（英文）
+│   ├── expert-recoach-integration.md   # ExPerT 对照分析与升级方向
+│   └── teaching-start-evaluation.md    # 教学起点成对评估的数据格式与汇总
 │
 ├── tools/
-│   └── consistency_audit.py     # 跨文件一致性审计（配置项/错误码/类型/代码卫生）
+│   ├── consistency_audit.py     # 跨文件一致性审计（配置项/错误码/类型/代码卫生）
+│   ├── evaluate_teaching_start.py      # 教学起点成对评估汇总（离线，不调用模型）
+│   └── test_evaluate_teaching_start.py # 上面脚本的单元测试
 │
 ├── recoach-server/              # 后端（FastAPI + SQLite）
 ├── recoach-frontend/            # Web 前端（React + Vite）
@@ -55,7 +59,8 @@ re-coach-tui/dist/               # TUI 构建产物
 
 - **README.md / README_EN.md**: 项目介绍、快速开始、仓库组成、文档索引
 - **docker-compose.yml**: 一键启动配置。只放容器部署特有的值（DB 绝对路径、令牌、可信网段），应用配置由 `env_file` 从 `recoach-server/.env` 注入
-- **tools/consistency_audit.py**: 检查 `.env.example` 与 `config.py` 字段/默认值是否同步、后端 Metrics 字段是否同步到前端与 TUI 类型、错误码是否被前端硬编码、是否残留调试输出
+- **tools/consistency_audit.py**: 检查 `.env.example` 与 `config.py` 字段/默认值是否同步、后端 Metrics 字段是否同步到前端与 TUI 类型、错误码是否被前端硬编码、TUI 与后端的常量/默认值是否漂移、是否残留调试输出
+- **tools/evaluate_teaching_start.py**: 汇总人工标注的成对评估数据（起点准确率、起点过高率、迁移题正确率、满意度差值、首字延迟中位数），只读不调用模型
 
 ### 后端 (recoach-server/)
 
@@ -80,7 +85,7 @@ recoach-server/
 │   ├── ids.py / tokens.py
 │   ├── routes/                 # sessions / turns / forks / memories / meta / metrics
 │   └── services/               # 业务逻辑（见下）
-└── tests/                      # 18 个测试文件
+└── tests/                      # 24 个测试文件
 ```
 
 业务逻辑（`app/services/`）：
@@ -89,6 +94,8 @@ recoach-server/
 |---|---|
 | `orchestrator.py` | 单 Turn 编排与 SSE 终止语义 |
 | `gate.py` | Clarification Gate / ResolvedTask |
+| `teaching.py` | 逐问教学起点推断、概念反馈读取与写入 |
+| `instances.py` | 进程实例标识（启动恢复的归属判定） |
 | `memory.py` | 作用域检索、写入、归档、遗忘、反馈分类 |
 | `compiler.py` | 确定性 Context Compiler、系统提示词、不可信内容定界 |
 | `coach.py` | 模板 / OpenAI 兼容 / DeepSeek / Anthropic 流式 Coach |
@@ -135,10 +142,10 @@ re-coach-tui/
 │   ├── config.ts               # RECOACH_* 环境变量（与后端对齐）
 │   ├── store.ts                # JSON 文件持久化（替代 SQLite）
 │   ├── orchestrator.ts         # Turn 编排流水线
-│   ├── agent.ts / ids.ts / tokens.ts / types.ts
-│   ├── core/                   # gate / memory / compiler / coach / brief / events / selection
+│   ├── agent.ts / ids.ts / tokens.ts / types.ts / text.ts
+│   ├── core/                   # gate / teaching / memory / compiler / coach / brief / events / selection
 │   └── ui/                     # app / theme / sanitize（pi-tui 界面）
-└── tests/                      # 6 个测试文件
+└── tests/                      # 11 个测试文件
 ```
 
 ### AI Coach Skill (ai-coach-skill-repo/)
@@ -160,6 +167,8 @@ ai-coach-skill-repo/
 
 - **docs/quickstart.md**: 5 分钟快速上手（Docker 与本地开发）
 - **docs/deployment.md**: 部署指南（访问控制、限流、备份、故障排查）
+- **docs/expert-recoach-integration.md**: ExPerT 论文对照、相似点与 A/B/D 升级方向
+- **docs/teaching-start-evaluation.md**: 教学起点适配的成对评估数据格式与离线汇总
 - **recoach-frontend/README.md**: 前端能力、SSE 契约、已实现与未实现边界
 - **recoach-server/README.md**: 后端架构、API 表、能力诚实性
 - **recoach-server/README_LLM_CONFIG.md**: LLM 供应商配置与验证
@@ -180,8 +189,8 @@ ai-coach-skill-repo/
 - **.github/workflows/test.yml**: GitHub Actions 配置
   - `backend`: Python 3.10 上安装依赖 → `pytest -q` → `python tools/consistency_audit.py`
   - `frontend`: Node 22 上 `npm ci` → `tsc --noEmit` → `npm test`
+  - `tui`: Node 22 上 `npm ci` → `npm run typecheck` → `npm run build` → `npm test`
   - `docker-build`: 前后端镜像构建（只验证构建，不启动）
-  - TUI 测试尚未接入 CI
 
 ## 开始使用
 

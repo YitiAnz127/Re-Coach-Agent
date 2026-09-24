@@ -32,7 +32,7 @@ describe("Multi-turn behaviors", () => {
   it("session-only rule persists across turns and appears in next explanation", async () => {
     const cfg = makeConfig();
     const store = new Store(cfg);
-    const sess = store.createSession(cfg.locale);
+    const sess = store.createSession();
     const session = { id: sess.id, memoryOn: true, isFork: false };
 
     // 建立澄清链：先触发 clarify，再明确方向
@@ -71,7 +71,7 @@ describe("Multi-turn behaviors", () => {
   it("feedback write_longterm creates memory in a turn", async () => {
     const cfg = makeConfig();
     const store = new Store(cfg);
-    const sess = store.createSession(cfg.locale);
+    const sess = store.createSession();
     const session = { id: sess.id, memoryOn: true, isFork: false };
     await run(session, cfg, store, "以后讲反向传播的时候先给公式，再讲直觉");
     expect(store.queryAllActiveMemories(cfg.user).length).toBe(1);
@@ -80,7 +80,7 @@ describe("Multi-turn behaviors", () => {
   it("fork briefs are isolated from each other", async () => {
     const cfg = makeConfig();
     const store = new Store(cfg);
-    const sess = store.createSession(cfg.locale);
+    const sess = store.createSession();
     await run({ id: sess.id, memoryOn: true, isFork: false }, cfg, store, "讲讲梯度下降");
     const forks = store.createSessionFork(sess.id);
     expect(forks.length).toBe(2);
@@ -92,7 +92,7 @@ describe("Memory application loop", () => {
   it("applies a remembered preference in a later turn's personalization", async () => {
     const cfg = makeConfig();
     const store = new Store(cfg);
-    const sess = store.createSession(cfg.locale);
+    const sess = store.createSession();
     const session = { id: sess.id, memoryOn: true, isFork: false };
 
     // 先记住偏好（全局交互规则）

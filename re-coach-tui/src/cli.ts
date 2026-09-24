@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   }
   ensureDataDir(cfg);
   const store = new Store(cfg);
-  const session = store.createSession(cfg.locale);
+  const session = store.createSession();
   // 恢复上次会话并回放历史：每次启动都开新会话会让用户"昨天的对话不见了"。
   // 恢复失败（数据损坏/无历史）时静默从空会话开始。
   const previous = store.latestResumableSession();

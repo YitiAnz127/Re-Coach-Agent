@@ -54,6 +54,15 @@ function isObjectArray(value: unknown, predicate: (item: JsonRecord) => boolean)
 function isPresentation(value: unknown): value is TurnPresentation {
   if (!isRecord(value)) return false;
   if (!isTurnMode(value.mode) || !isDepth(value.depth)) return false;
+  if (value.teachingStart !== undefined) {
+    if (!isRecord(value.teachingStart)) return false;
+    const start = value.teachingStart;
+    if (
+      !["unknown", "novice", "familiar", "advanced"].includes(String(start.level)) ||
+      !["unknown", "current_explicit", "concept_feedback", "proposition_state"].includes(String(start.source)) ||
+      typeof start.domain !== "string" || typeof start.concept !== "string"
+    ) return false;
+  }
   if (typeof value.focus !== "string" || !isStringArray(value.plan)) return false;
   if (!isMetrics(value.metrics)) return false;
   if (

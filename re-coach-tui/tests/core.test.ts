@@ -134,7 +134,7 @@ describe("Full turn via orchestrator (template provider)", () => {
   it("produces completed event with content", async () => {
     const cfg = makeConfig();
     const store = new Store(cfg);
-    const sess = store.createSession(cfg.locale);
+    const sess = store.createSession();
     const session = { id: sess.id, memoryOn: cfg.memoryOn, isFork: false };
     const events = await collectEvents(session, cfg, store, "讲讲反向传播的机制，我完全不懂");
     const completed = events.find((e) => e.type === "turn.completed");
@@ -146,7 +146,7 @@ describe("Full turn via orchestrator (template provider)", () => {
   it("asks clarification then resolves on follow-up", async () => {
     const cfg = makeConfig();
     const store = new Store(cfg);
-    const sess = store.createSession(cfg.locale);
+    const sess = store.createSession();
     const session = { id: sess.id, memoryOn: cfg.memoryOn, isFork: false };
 
     const ev1 = await collectEvents(session, cfg, store, "讲讲梯度下降");

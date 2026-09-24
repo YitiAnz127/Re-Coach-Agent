@@ -10,7 +10,12 @@ import type {
   Memory,
   Message,
   SessionBrief,
+  TeachingLevel,
+  TeachingRating,
+  TeachingStart,
 } from "./types.js";
+import { adjustTeachingLevel } from "./core/teaching.js";
+import { codePointLength } from "./text.js";
 import { emptyBrief } from "./types.js";
 import type { EventStore } from "./core/events.js";
 import { classifyFeedback, type MemoryStore } from "./core/memory.js";
@@ -38,6 +43,16 @@ interface DataFile {
   sessions: PersistedSession[];
   messages: Message[];
   events: LedgerEvent[];
+  teachingCalibrations: Array<{
+    turnId: string;
+    userId: string;
+    domain: string;
+    concept: string;
+    rating: TeachingRating;
+    baseLevel: TeachingLevel;
+    level: TeachingLevel;
+    updatedAt: number;
+  }>;
 }
 
 /**
@@ -138,13 +153,26 @@ function normalizeData(data: DataFile): DataFile {
           : {},
       createdAt: asNumber(e.createdAt),
     })),
+    teachingCalibrations: asRecords<DataFile["teachingCalibrations"][number]>(data.teachingCalibrations).filter(
+      (row) => typeof row.turnId === "string" && typeof row.userId === "string" &&
+        typeof row.domain === "string" && typeof row.concept === "string" &&
+        ["too_basic", "just_right", "too_fast"].includes(row.rating) &&
+        ["unknown", "novice", "familiar", "advanced"].includes(row.baseLevel) &&
+        ["unknown", "novice", "familiar", "advanced"].includes(row.level) &&
+        typeof row.updatedAt === "number" && Number.isFinite(row.updatedAt),
+    ),
   };
 }
 
 export class Store implements MemoryStore, BriefStore, EventStore {
-  private data: DataFile = { memories: [], conceptStates: [], sessions: [], messages: [], events: [] };
+  private data: DataFile = { memories: [], conceptStates: [], sessions: [], messages: [], events: [], teachingCalibrations: [] };
   private filePath: string;
   private userId: string;
+  /** 写事务嵌套深度；> 0 时变更只标脏，不落盘。 */
+  private suspendDepth = 0;
+  private dirtyPending = false;
+  /** 累计落盘次数。诊断与测试用：验证一轮 Turn 只写一次文件。 */
+  private writes = 0;
 
   constructor(cfg: AppConfig) {
     this.filePath = cfg.storeFile;
@@ -161,7 +189,38 @@ export class Store implements MemoryStore, BriefStore, EventStore {
     }
   }
 
+  /**
+   * 批量写入口：块内所有变更合并成一次落盘。
+   *
+   * 为什么需要：save() 会把**整份** store.json 重新序列化并原子替换，而文件大小
+   * 随历史单调增长。一轮 Turn 会触发约 10 次变更（logEvent 5~7 次、saveMessage
+   * 2 次、updateBrief 1 次，外加记忆写入），逐次落盘意味着每轮重写十遍全量数据，
+   * 整体退化成 O(n²)——用得越久每轮越慢。包一层事务后每轮只写一次。
+   *
+   * 持久性不降级：块内变更仍在内存里，正常返回与抛异常都会走 finally 落盘一次，
+   * 与"每次变更立刻落盘"相比没有多出崩溃窗口（崩溃时丢的是同一轮尚未完成的变更）。
+   */
+  async transaction<T>(fn: () => Promise<T>): Promise<T> {
+    this.suspendDepth += 1;
+    try {
+      return await fn();
+    } finally {
+      this.suspendDepth -= 1;
+      if (this.suspendDepth === 0) this.flush();
+    }
+  }
+
+  /** 变更入口：非事务上下文立即落盘，事务内只标脏。 */
   private save(): void {
+    this.dirtyPending = true;
+    if (this.suspendDepth > 0) return;
+    this.flush();
+  }
+
+  private flush(): void {
+    if (!this.dirtyPending) return;
+    this.dirtyPending = false;
+    this.writes += 1;
     // store.json 含完整对话历史与学习偏好，属于个人数据：
     // 目录 0700、文件 0600，避免同机其他用户可读（Windows 上由 ACL 继承兜底）。
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
@@ -175,6 +234,11 @@ export class Store implements MemoryStore, BriefStore, EventStore {
     } finally {
       fs.rmSync(temporaryPath, { force: true });
     }
+  }
+
+  /** 累计落盘次数（诊断/测试用）。 */
+  get fileWriteCount(): number {
+    return this.writes;
   }
 
   // ---- MemoryStore ----
@@ -233,6 +297,43 @@ export class Store implements MemoryStore, BriefStore, EventStore {
     return s.id;
   }
 
+  latestTeachingCalibration(userId: string, domain: string, concept: string): { level: TeachingLevel } | undefined {
+    if (!concept) return undefined;
+    return [...this.data.teachingCalibrations]
+      .filter((row) => row.userId === userId && row.domain === domain && row.concept === concept)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  }
+
+  latestTeachingStartForSession(sessionId: string): { turnId: string; start: TeachingStart } | undefined {
+    const turnIds = new Set(this.data.messages.filter((m) => m.sessionId === sessionId).map((m) => m.turnId));
+    for (const event of [...this.data.events].reverse()) {
+      if (event.kind !== "context_compiled" || !turnIds.has(event.turnId)) continue;
+      const start = event.payload.teachingStart as TeachingStart | undefined;
+      if (start?.concept) return { turnId: event.turnId, start };
+    }
+    return undefined;
+  }
+
+  recordTeachingCalibration(
+    target: { turnId: string; start: TeachingStart }, userId: string, rating: TeachingRating,
+  ): TeachingLevel {
+    const existing = this.data.teachingCalibrations.find((row) => row.turnId === target.turnId && row.userId === userId);
+    const baseLevel = existing?.baseLevel ?? target.start.level;
+    const level = adjustTeachingLevel(baseLevel, rating);
+    if (existing) {
+      existing.rating = rating;
+      existing.level = level;
+      existing.updatedAt = Date.now();
+    } else {
+      this.data.teachingCalibrations.push({
+        turnId: target.turnId, userId, domain: target.start.domain, concept: target.start.concept,
+        rating, baseLevel, level, updatedAt: Date.now(),
+      });
+    }
+    this.save();
+    return level;
+  }
+
   // ---- EventStore ----
   logEvent(e: LedgerEvent): LedgerEvent {
     const existing = this.data.events.find(
@@ -245,7 +346,12 @@ export class Store implements MemoryStore, BriefStore, EventStore {
   }
 
   // ---- Session ----
-  createSession(locale: string): PersistedSession {
+  /**
+   * 建会话。**没有 locale 参数**：它曾经被接收却从不落库（PersistedSession
+   * 里也没有这一项），是个只让人误以为"设了就会生效"的死参数。
+   * 回答语言由系统提示按用户消息本身的语言决定，不需要会话级配置。
+   */
+  createSession(): PersistedSession {
     const s: PersistedSession = {
       id: newSessionId(),
       userId: this.userId,
@@ -357,7 +463,8 @@ export class Store implements MemoryStore, BriefStore, EventStore {
     const skipTurns = new Set<string>();
     const sourceMsgs = this.data.messages.filter((m) => m.sessionId === sourceSessionId);
     for (const msg of sourceMsgs) {
-      if (msg.role === "user" && msg.content.length <= 40 && classifyFeedback(msg.content).kind !== "none") {
+      // 与后端 len(message["content"]) <= 40 对齐（码点计数）
+      if (msg.role === "user" && codePointLength(msg.content) <= 40 && classifyFeedback(msg.content).kind !== "none") {
         skipTurns.add(msg.turnId);
       }
     }

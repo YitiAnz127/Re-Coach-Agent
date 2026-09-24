@@ -8,7 +8,6 @@ export interface AppConfig {
   dataDir: string;
   storeFile: string;
   user: string;
-  locale: "zh-CN" | "en";
   // 主 Coach 模型
   llmProvider: "template" | "openai_compatible" | "deepseek" | "anthropic";
   llmBaseUrl: string;
@@ -25,6 +24,8 @@ export interface AppConfig {
   llmMaxTokens: number;
   llmTimeoutMs: number;
   llmMaxContinuations: number;
+  /** 真实模型在首字之前失败时：false=降级为模板，true=直接报 MODEL_UNAVAILABLE。 */
+  llmFailFast: boolean;
   // 记忆与预算
   memoryOn: boolean;
   memoryMaxSelected: number;
@@ -41,22 +42,29 @@ export function loadConfig(overrides: Record<string, string | undefined> = {}): 
     dataDir,
     storeFile: path.join(dataDir, "store.json"),
     user: resolve("RECOACH_DEV_USER", "dev_user"),
-    locale: (resolve("RECOACH_LOCALE", "zh-CN") === "en" ? "en" : "zh-CN"),
     llmProvider: (resolve("RECOACH_LLM_PROVIDER", "template") as AppConfig["llmProvider"]),
     llmBaseUrl: resolve("RECOACH_LLM_BASE_URL"),
     llmApiKey: resolve("RECOACH_LLM_API_KEY"),
     llmModel: resolve("RECOACH_LLM_MODEL"),
     deepseekApiKey: resolve("RECOACH_DEEPSEEK_API_KEY") || resolve("DEEPSEEK_API_KEY"),
     deepseekBaseUrl: resolve("RECOACH_DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-    deepseekModel: resolve("RECOACH_DEEPSEEK_MODEL", "deepseek-chat"),
+    // 默认值与后端 config.py（也是 .env.example 的权威值）保持一致：
+    // 不一致会让"只配密钥不配模型"的用户在两个界面静默跑在不同模型上。
+    deepseekModel: resolve("RECOACH_DEEPSEEK_MODEL", "deepseek-v4-flash"),
     deepseekThinking: resolve("RECOACH_DEEPSEEK_THINKING", "enabled") === "disabled" ? "disabled" : "enabled",
     deepseekReasoningEffort: parseReasoningEffort(resolve("RECOACH_DEEPSEEK_REASONING_EFFORT", "medium")),
     anthropicApiKey: resolve("RECOACH_ANTHROPIC_API_KEY") || resolve("ANTHROPIC_API_KEY"),
-    anthropicModel: resolve("RECOACH_ANTHROPIC_MODEL", "claude-sonnet-4-5"),
+    anthropicModel: resolve("RECOACH_ANTHROPIC_MODEL", "claude-opus-5"),
     llmMaxTokens: parseInteger(resolve("RECOACH_LLM_MAX_TOKENS", "10000"), 10_000, 1, 1_000_000),
     // 与服务端配置保持一致：RECOACH_LLM_TIMEOUT 的公开单位是秒。
     llmTimeoutMs: parseInteger(resolve("RECOACH_LLM_TIMEOUT", "90"), 90, 1, 3_600) * 1_000,
     llmMaxContinuations: parseInteger(resolve("RECOACH_LLM_MAX_CONTINUATIONS", "2"), 2, 0, 2),
+    // 与后端 RECOACH_LLM_FAIL_FAST 同语义，默认同为 false（降级为模板并如实披露）。
+    llmFailFast: (() => {
+      const v = overrides.RECOACH_LLM_FAIL_FAST ?? process.env.RECOACH_LLM_FAIL_FAST;
+      if (v === undefined || v === "") return false;
+      return v.toLowerCase() === "true" || v === "1";
+    })(),
     memoryOn: (() => {
       const v = overrides.RECOACH_MEMORY_ON ?? process.env.RECOACH_MEMORY_ON;
       if (v === undefined || v === "") return true;

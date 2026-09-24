@@ -23,6 +23,48 @@ class ProviderFailure(RuntimeError):
         self.reason = reason
 
 
+class ProviderStreamTooLong(RuntimeError):
+    """上游流式响应里有超长未终止行，读取已中止。"""
+
+
+# 单行未终止时的缓冲上限（字符数）。
+#
+# httpx 的 aiter_lines() 没有这个上限：对端只要持续发送不含换行的数据，
+# 它的内部缓冲就会一直涨，而 read timeout 只限制**两次数据之间的间隔**、
+# 不限制总量——一个快速发送的恶意/异常端点足以在超时窗口内把堆打爆。
+# 正常事件远小于这个上限，触到即为异常流。
+# 与 TUI core/coach.ts 的 MAX_PENDING_LINE 对齐（那边是先加上的）。
+MAX_PENDING_LINE_CHARS = 1_000_000
+
+
+async def _iter_sse_lines(
+    response, max_chars: int = MAX_PENDING_LINE_CHARS
+) -> AsyncIterator[str]:
+    """按行产出流式响应体，并给"尚未出现换行"的缓冲设上限。
+
+    替代 response.aiter_lines()：语义相同，但缓冲有界。
+    用 aiter_text()（而非 aiter_bytes）是为了让增量解码器处理跨块的
+    多字节字符，不会把 UTF-8 序列切断。
+
+    SSE 允许 `\\n`、`\\r`、`\\r\\n` 三种行终止符，httpx 的 aiter_lines 三种都认。
+    因此这里先把 `\\r` 归一成 `\\n`——只切 `\\n` 的话，上游若用裸 `\\r` 分帧，
+    整个响应会被当成一行，正文静默变成空字符串（且不报错，最难发现的那种）。
+    `\\r\\n` 归一后会多出一个空行，但消费方只看 `data:` 开头的行，会跳过它。
+    """
+    buffer = ""
+    async for chunk in response.aiter_text():
+        buffer += chunk.replace("\r\n", "\n").replace("\r", "\n")
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            yield line
+        if len(buffer) > max_chars:
+            raise ProviderStreamTooLong(
+                f"上游流式响应单行超过 {max_chars} 字符上限"
+            )
+    if buffer:
+        yield buffer
+
+
 @dataclass
 class CoachMeta:
     provider: str = "template"
@@ -39,8 +81,9 @@ class CoachMeta:
     fallback_reason: str = ""
     truncated: bool = False
     continuation_count: int = 0
-    thinking_tokens: int = 0
-    actual_thinking_chars: int = 0  # 新增：实际thinking字符数
+    # 本轮模型实际产出的 thinking 字符数。它决定续写策略，也是排查
+    # "思考吃满预算、正文被挤掉" 的关键信号，因此要进 model_called 事件表。
+    actual_thinking_chars: int = 0
 
 
 def resolve_provider() -> tuple[str, str]:
@@ -52,13 +95,6 @@ def resolve_provider() -> tuple[str, str]:
     if settings.llm_provider == "anthropic" and settings.effective_anthropic_key and settings.anthropic_model:
         return "anthropic", settings.anthropic_model
     return "template", "template"
-
-
-def _estimate_tokens_chinese(text: str) -> int:
-    """更准确的中文token估算（仅用于统计）"""
-    chinese_chars = sum(1 for c in text if '一' <= c <= '鿿')
-    other_chars = len(text) - chinese_chars
-    return int(chinese_chars / 1.2 + other_chars / 4)
 
 
 async def _stream_chat_completions(
@@ -99,7 +135,8 @@ async def _stream_chat_completions(
     try:
         async with request_client.stream("POST", url, json=payload, headers=headers) as response:
             response.raise_for_status()
-            async for line in response.aiter_lines():
+            # 不用 response.aiter_lines()：它没有单行缓冲上限（见 _iter_sse_lines）。
+            async for line in _iter_sse_lines(response):
                 if not line.startswith("data:"):
                     continue
                 data = line[5:].strip()
@@ -148,8 +185,6 @@ async def _stream_chat_completions(
                     yield ("content", content)
                     
     finally:
-        if meta.actual_thinking_chars > 0:
-            meta.thinking_tokens = _estimate_tokens_chinese(str(meta.actual_thinking_chars))
         if owns_client:
             await request_client.aclose()
 
@@ -230,6 +265,12 @@ _DEPTH_LABEL = {
 def _template_text(task: ResolvedTask, applied_labels: list[str]) -> str:
     concept = task.concept or "这个概念"
     depth = task.desired_depth if task.desired_depth != "auto" else "L2"
+    start_note = {
+        "novice": "先补必要定义和前置，再走到你要求的深度。",
+        "familiar": "从你已有的基础继续，关键术语会在需要时解释。",
+        "advanced": "跳过重复的入门定义，直接进入核心机制。",
+        "unknown": "先给最小必要前置，再逐步展开。",
+    }[task.teaching_start.level]
     preference_note = f"\n\n已按你的稳定偏好调整：{'；'.join(applied_labels)}。" if applied_labels else ""
     if task.output_preference:
         preference_note += f"\n本轮要求：{'；'.join(task.output_preference)}。"
@@ -244,8 +285,8 @@ def _template_text(task: ResolvedTask, applied_labels: list[str]) -> str:
     else:
         body = "先说它解决的问题，再连接已知前置；随后用最小直觉、机制步骤和边界把它落地。"
     return (
-        f"下面按「{concept} · {task.task_scope}」来讲，局部深度 {depth}（{_DEPTH_LABEL.get(depth, '')}）。\n\n"
-        f"{body}\n\n"
+        f"下面按「{concept} · {task.task_scope}」来讲，目标深度 {depth}（{_DEPTH_LABEL.get(depth, '')}）。\n\n"
+        f"{start_note}{body}\n\n"
         "当前由内置模板回答：未配置外部模型。配置 RECOACH_LLM_PROVIDER 后，这里将替换为真实讲解，结构与个性化行为保持不变。"
         f"{preference_note}"
     )
@@ -362,6 +403,8 @@ def _classify_provider_failure(exc: BaseException) -> str:
         return "TIMEOUT"
     if isinstance(exc, httpx.TransportError):
         return "NETWORK"
+    if isinstance(exc, ProviderStreamTooLong):
+        return "STREAM_TOO_LONG"
     return "ERROR"
 
 

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 # ---------- v0.6 领域模型 ----------
 
 Depth = Literal["L0", "L1", "L2", "L3", "L4", "L5"]
+TeachingLevel = Literal["unknown", "novice", "familiar", "advanced"]
 TurnMode = Literal["clarify", "explain", "reflect"]
 GateDecision = Literal["READY", "NEEDS_CLARIFICATION", "ANSWER_WITH_ASSUMPTION"]
 MemoryType = Literal["explanation_preference", "interaction_rule"]
@@ -29,6 +30,15 @@ TASK_SCOPES = (
 )
 
 
+class TeachingStart(BaseModel):
+    """本轮讲解起点，独立于用户要求的目标深度。"""
+
+    level: TeachingLevel = "unknown"
+    source: Literal["unknown", "current_explicit", "concept_feedback", "proposition_state"] = "unknown"
+    domain: str = ""
+    concept: str = ""
+
+
 class ResolvedTask(BaseModel):
     """问题完整（或可按假设回答）后固化的任务。完整检索只发生在它形成之后。"""
 
@@ -38,6 +48,7 @@ class ResolvedTask(BaseModel):
     proposition: str = ""
     known_context: list[str] = Field(default_factory=list)
     desired_depth: str = "auto"  # auto | L0..L5
+    teaching_start: TeachingStart = Field(default_factory=TeachingStart)
     task_scope: str = "直觉解释"
     output_preference: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
@@ -153,6 +164,7 @@ class TurnPresentation(BaseModel):
 
     mode: TurnMode
     depth: Depth | None = None
+    teachingStart: TeachingStart | None = None
     focus: str
     plan: list[str]
     personalization: list[PersonalizationItem] = Field(default_factory=list)

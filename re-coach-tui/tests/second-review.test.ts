@@ -13,7 +13,7 @@ it("reports actual provider and fallback reason to the TUI", async () => {
   try {
     const cfg = loadConfig({ RECOACH_DATA_DIR: dir, RECOACH_LLM_PROVIDER: "openai_compatible", RECOACH_LLM_API_KEY: "test", RECOACH_LLM_BASE_URL: "https://example.test/v1", RECOACH_LLM_MODEL: "test-model" });
     const store = new Store(cfg);
-    const session = { id: store.createSession(cfg.locale).id, memoryOn: true, isFork: false };
+    const session = { id: store.createSession().id, memoryOn: true, isFork: false };
     vi.stubGlobal("fetch", vi.fn(async () => new Response("secret upstream error", { status: 401 })));
     const events: AgentTurnEvent[] = [];
     await runTurn({ cfg, store, session, userText: "我想看反向传播的公式推导，从定义开始", onEvent: e => events.push(e) });

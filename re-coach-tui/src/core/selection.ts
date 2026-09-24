@@ -6,6 +6,7 @@
 // 刻意保守：只有上一轮**确实是带选项的澄清轮**时才生效，
 // 避免把正常短消息误当成选项编号。
 import type { ClarificationOption, TurnPresentation } from "../types.js";
+import { codePointLength } from "../text.js";
 
 // 允许「1」「A」「1.」「A、」「第2个」「选C」等常见写法
 const PATTERNS: RegExp[] = [
@@ -17,7 +18,8 @@ const PATTERNS: RegExp[] = [
 /** 把选择符解析成 0 基下标；不是选择符时返回 null。 */
 function indexFromSelector(raw: string): number | null {
   const text = raw.trim().replace(/^[。．.、,，)）\]】\s]+|[。．.、,，)）\]】\s]+$/g, "");
-  if (!text || text.length > 8) return null;
+  // 与后端 len(text) > 8 对齐（码点，不是 UTF-16 码元）
+  if (!text || codePointLength(text) > 8) return null;
   for (const pattern of PATTERNS) {
     const match = pattern.exec(text);
     const token = match?.[1];

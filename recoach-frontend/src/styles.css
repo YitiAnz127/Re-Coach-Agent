@@ -193,6 +193,12 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, summary:focu
 .suggested-actions button { min-height: 40px; padding: 0 var(--s3) 0 var(--s4); border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.5); display: inline-flex; align-items: center; gap: var(--s2); font-size: 13px; cursor: pointer; transition: transform 150ms ease, color 180ms ease, background 180ms ease; }
 .suggested-actions button:hover { color: var(--accent); background: white; }
 .suggested-actions button:active { transform: scale(.97); }
+.teaching-calibration { margin-top: var(--s4); display: grid; gap: var(--s2); color: var(--muted); font-size: 12px; }
+.teaching-calibration-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.teaching-calibration-actions button { min-height: 36px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: 12px; background: var(--surface-solid); color: var(--ink); cursor: pointer; }
+.teaching-calibration-actions button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.teaching-calibration-actions button:disabled { opacity: .5; cursor: wait; }
+.teaching-calibration small { color: var(--muted); }
 
 .side-rail-content { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--s6) + var(--s1)); align-items: stretch; justify-content: center; max-width: 1040px; margin-inline: auto; }
 .side-rail-content > .rail-panel { min-height: 344px; display: flex; flex-direction: column; }

@@ -1,4 +1,12 @@
 export type CognitiveDepth = "L0" | "L1" | "L2" | "L3" | "L4" | "L5";
+export type TeachingRating = "too_basic" | "just_right" | "too_fast";
+
+export interface TeachingStart {
+  level: "unknown" | "novice" | "familiar" | "advanced";
+  source: "unknown" | "current_explicit" | "concept_feedback" | "proposition_state";
+  domain: string;
+  concept: string;
+}
 
 export type TurnMode = "clarify" | "explain" | "reflect";
 
@@ -60,6 +68,7 @@ export interface SuggestedAction {
 export interface TurnPresentation {
   mode: TurnMode;
   depth?: CognitiveDepth;
+  teachingStart?: TeachingStart;
   focus: string;
   plan: string[];
   personalization: PersonalizationEvidence[];
@@ -91,6 +100,9 @@ export interface ChatMessage {
   turnId?: string;
   elapsedMs?: number;
   completedAt?: string;
+  calibration?: TeachingRating;
+  calibrationSaving?: boolean;
+  calibrationError?: string;
 }
 
 export type AgentStreamEvent =

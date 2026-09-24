@@ -110,7 +110,7 @@ describe("store 文件权限", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recoach-perm-"));
     const cfg = loadConfig({ RECOACH_DATA_DIR: dir, RECOACH_LLM_PROVIDER: "template" });
     const store = new Store(cfg);
-    store.createSession("zh-CN");
+    store.createSession();
 
     const storeFile = path.join(dir, "store.json");
     expect(fs.existsSync(storeFile)).toBe(true);

@@ -34,7 +34,7 @@ describe("persistence and memory regressions", () => {
   });
   it("preserves message order when timestamps tie", () => {
     const { cfg, store } = setup();
-    const session = store.createSession(cfg.locale);
+    const session = store.createSession();
     vi.spyOn(Date, "now").mockReturnValue(100);
     store.saveMessage(session.id, "t1", "user", "question");
     store.saveMessage(session.id, "t1", "assistant", "answer");
@@ -43,7 +43,7 @@ describe("persistence and memory regressions", () => {
   });
   it("isolates copied fork turns and message updates", () => {
     const { cfg, store } = setup();
-    const session = store.createSession(cfg.locale);
+    const session = store.createSession();
     store.saveMessage(session.id, "t1", "user", "question");
     const [a, b] = store.createSessionFork(session.id);
     const ma = store.messagesFor(a!.id)[0]!;
@@ -64,7 +64,7 @@ describe("persistence and memory regressions", () => {
     const { cfg, store } = setup();
     writeMemory(store, cfg.user, { type: "interaction_rule", rule: "以后先给公式", sourceEventId: "old" });
     forgetMemories(store, cfg.user, "公式", "forget");
-    const session = { id: store.createSession(cfg.locale).id, memoryOn: true, isFork: false };
+    const session = { id: store.createSession().id, memoryOn: true, isFork: false };
     const events: AgentTurnEvent[] = [];
     await runTurn({ cfg, store, session, userText: "我想看反向传播的公式推导，从定义开始", onEvent: e => events.push(e) });
     const completed = events.find(e => e.type === "turn.completed");
@@ -104,7 +104,7 @@ describe("provider streaming regressions", () => {
 it("keeps fork memory content after live memory changes and reload", async () => {
   const { cfg, store } = setup();
   const memory = writeMemory(store, cfg.user, { type: "interaction_rule", rule: "以后先给公式", sourceEventId: "frozen" });
-  const source = store.createSession(cfg.locale);
+  const source = store.createSession();
   const [fork] = store.createSessionFork(source.id);
   forgetMemories(store, cfg.user, "公式", "forget_live");
   const reopened = new Store(cfg);
@@ -116,7 +116,7 @@ it("keeps fork memory content after live memory changes and reload", async () =>
 
 it("reports persistence failure instead of completing the turn", async () => {
   const { cfg, store } = setup();
-  const session = { id: store.createSession(cfg.locale).id, isFork: false, memoryOn: true };
+  const session = { id: store.createSession().id, isFork: false, memoryOn: true };
   const original = store.saveMessage.bind(store);
   vi.spyOn(store, "saveMessage").mockImplementation((sid, tid, role, text) => {
     if (role === "assistant") throw new Error("disk full");

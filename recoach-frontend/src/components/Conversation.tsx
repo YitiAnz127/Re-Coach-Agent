@@ -8,12 +8,14 @@ import type {
   MicroExperiment,
   Retrospective,
   SuggestedAction,
+  TeachingRating,
 } from "../types";
 
 interface ConversationProps {
   messages: ChatMessage[];
   onAction: (prompt: string) => void;
   onRetry: (messageId: string) => void;
+  onCalibration?: (messageId: string, turnId: string, rating: TeachingRating) => void;
   serviceMeta?: ServiceMeta;
 }
 
@@ -152,11 +154,13 @@ function AssistantMessage({
   message,
   onAction,
   onRetry,
+  onCalibration,
   serviceMeta,
 }: {
   message: ChatMessage;
   onAction: (prompt: string) => void;
   onRetry: (messageId: string) => void;
+  onCalibration?: (messageId: string, turnId: string, rating: TeachingRating) => void;
   serviceMeta?: ServiceMeta;
 }) {
   const presentation = message.presentation;
@@ -229,11 +233,35 @@ function AssistantMessage({
       {presentation?.experiment && <Experiment experiment={presentation.experiment} />}
       {presentation?.retrospective && <RetrospectiveBlock retrospective={presentation.retrospective} />}
       {presentation && <SuggestedActions actions={presentation.suggestedActions} onAction={onAction} />}
+      {message.state === "complete" && message.turnId && presentation?.teachingStart?.concept && onCalibration && (
+        <div className="teaching-calibration" aria-label="调整下次讲解起点">
+          <span>这次讲解的起点合适吗？</span>
+          <div className="teaching-calibration-actions">
+            {([
+              ["too_basic", "太基础"],
+              ["just_right", "正合适"],
+              ["too_fast", "跳得太快"],
+            ] as const).map(([rating, label]) => (
+              <button
+                key={rating}
+                type="button"
+                aria-pressed={message.calibration === rating}
+                disabled={message.calibrationSaving}
+                onClick={() => onCalibration(message.id, message.turnId!, rating)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {message.calibration && <small role="status">已记录；只用于「{presentation.teachingStart.concept}」的后续讲解。</small>}
+          {message.calibrationError && <small role="alert">{message.calibrationError}</small>}
+        </div>
+      )}
     </article>
   );
 }
 
-export function Conversation({ messages, onAction, onRetry, serviceMeta }: ConversationProps) {
+export function Conversation({ messages, onAction, onRetry, onCalibration, serviceMeta }: ConversationProps) {
   return (
     <section className="conversation" aria-label="学习对话">
       {messages.map((message) =>
@@ -248,6 +276,7 @@ export function Conversation({ messages, onAction, onRetry, serviceMeta }: Conve
             message={message}
             onAction={onAction}
             onRetry={onRetry}
+            onCalibration={onCalibration}
             serviceMeta={serviceMeta}
           />
         ),

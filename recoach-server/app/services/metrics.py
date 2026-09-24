@@ -20,11 +20,31 @@ def _metric_block(values: list[float]) -> dict[str, float | None]:
     return {"count": len(values), "p50": _percentile(values, 0.50), "p95": _percentile(values, 0.95)}
 
 
+# 单次汇总最多扫描的**最近**事件数。
+#
+# events 表随使用无界增长（每个 Turn 约 6 条），而本函数会把命中的每一行都读进
+# 内存并在 Python 侧逐条 json.loads。不加界的话，这个只读端点的成本随历史线性上升，
+# 最终打满内存（1g mem_limit 下足以让容器被杀）——单用户长期使用同样能触发。
+#
+# 汇总本身就是"最近表现"的语义，因此只取最近 N 条。
+# 注意：下面所有聚合（集合、Counter、排序后取分位）都与行序无关，
+# 因此倒序截断不会改变结果，只是改变统计窗口。
+EVENTS_SCAN_LIMIT = 5_000
+
+
 def summarize(*, user_id: str, session_id: str | None = None) -> dict[str, Any]:
     if session_id:
-        rows = db.query("SELECT * FROM events WHERE user_id=? AND session_id=? ORDER BY created_at", (user_id, session_id))
+        rows = db.query(
+            """SELECT * FROM events WHERE user_id=? AND session_id=?
+               ORDER BY created_at DESC, rowid DESC LIMIT ?""",
+            (user_id, session_id, EVENTS_SCAN_LIMIT),
+        )
     else:
-        rows = db.query("SELECT * FROM events WHERE user_id=? ORDER BY created_at", (user_id,))
+        rows = db.query(
+            """SELECT * FROM events WHERE user_id=?
+               ORDER BY created_at DESC, rowid DESC LIMIT ?""",
+            (user_id, EVENTS_SCAN_LIMIT),
+        )
 
     completed_turns = {row["turn_id"] for row in rows if row["kind"] == "response_completed"}
     failed_turns = {row["turn_id"] for row in rows if row["kind"] == "turn_failed"}

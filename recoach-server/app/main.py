@@ -12,10 +12,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import db
 from .auth import AuthMiddleware
-from .config import get_settings
+from .config import check_base_url_security, get_settings
 from .errors import error_payload
 from .ids import new_id
 from .routes import forks, memories, meta, metrics, sessions, turns
+from .services import coach as coach_service
 from .services import turns as turn_store
 
 # 客户端可控的 x-request-id 只允许这一组字符，避免响应头/日志注入。
@@ -228,6 +229,28 @@ class RequestIdMiddleware:
 
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    # 启动期配置校验：携带密钥的端点不得是公网明文 http，否则密钥会裸奔。
+    # 放在这里而不是 lifespan，是为了让"配置错了"在任何入口都被发现
+    # （lifespan 在 TestClient 不进出上下文时不会执行）。
+    # 失败就**起不来**：这类错误静默运行时看不出来，而代价是密钥泄露。
+    #
+    # 只检查**实际生效的 provider 会用到**的那个端点：provider=template 时
+    # llm_base_url / deepseek_base_url 根本不参与请求，为一个惰性配置让长驻服务
+    # 起不来（compose 的 restart: unless-stopped 下会变成重启循环）是过度拦截。
+    provider, _model = coach_service.resolve_provider()
+    base_url_problem: str | None = None
+    if provider == "openai_compatible":
+        base_url_problem = check_base_url_security(
+            settings.llm_base_url, bool(settings.llm_api_key)
+        )
+    elif provider == "deepseek":
+        base_url_problem = check_base_url_security(
+            settings.deepseek_base_url, bool(settings.effective_deepseek_key)
+        )
+    if base_url_problem:
+        raise RuntimeError(base_url_problem)
+
     app = FastAPI(
         title="知返 Re:Coach API",
         version="1.1.0",
@@ -238,7 +261,10 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if settings.docs_enabled else None,
     )
 
-    # 中间件自外向内：RequestId -> MaxBodySize -> CORS -> Auth -> 路由。
+    # 中间件自外向内：RequestId -> CORS -> MaxBodySize -> Auth -> 路由。
+    # （Starlette 把后 add 的放在更外层，因此这里的 add 顺序与生效顺序相反。）
+    # 实测确认：超大 body + 无 token 返回 413 而非 401（MaxBodySize 在 Auth 外层）；
+    # 该 413 带 access-control-allow-origin（CORS 在 MaxBodySize 外层）。
     # Auth 必须位于 CORS 内层，否则 401 响应没有 CORS 头，浏览器读不到错误体。
     # MaxBodySize 放在 Auth 外层：超大请求体不该先做令牌比较再拒绝。
     app.add_middleware(AuthMiddleware)

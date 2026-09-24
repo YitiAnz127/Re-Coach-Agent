@@ -24,6 +24,7 @@ from . import gate as gate_service
 from . import memory as memory_service
 from . import selection as selection_service
 from . import turns as turn_store
+from . import teaching as teaching_service
 
 
 def _suggested_actions(concept: str, scope: str) -> list[SuggestedAction]:
@@ -332,6 +333,13 @@ async def run_turn(
                 )[:5]
             else:
                 states = brief_service.concept_states_for(user_id, task, state_ids=fork_concept_ids)
+            calibration = (
+                teaching_service.latest_calibration(user_id, task.domain, task.concept)
+                if effective_memory_on and not is_fork else None
+            )
+            task.teaching_start = teaching_service.infer_teaching_start(
+                task, user_text, states, calibration
+            )
             recent = brief_service.recent_messages(session_id)
             context = compiler_service.compile_context(
                 task=task,
@@ -352,7 +360,8 @@ async def run_turn(
             event_service.log_event(
                 user_id=user_id, session_id=session_id, turn_id=turn_id,
                 mode=mode, kind="context_compiled",
-                payload={**context.trace, "capsuleTokens": context.capsule_tokens},
+                payload={**context.trace, "capsuleTokens": context.capsule_tokens,
+                         "teachingStart": task.teaching_start.model_dump()},
                 token_count=context.total_input_tokens, latency_ms=context.compile_ms,
             )
             applied_labels = [effect for _, effect in context.applied]
@@ -409,6 +418,8 @@ async def run_turn(
                 "thinkingTtftMs": meta.thinking_ttft_ms,
                 "continuationCount": meta.continuation_count,
                 "contentTtftMs": meta.content_ttft_ms,
+                # 思考字符数：决定续写策略，也是排查"思考吃满预算"的关键信号
+                "thinkingChars": meta.actual_thinking_chars,
             },
             latency_ms=meta.ttft_ms,
         )
@@ -417,6 +428,7 @@ async def run_turn(
         presentation = TurnPresentation(
             mode="explain",
             depth=depth,  # type: ignore[arg-type]
+            teachingStart=task.teaching_start if not from_feedback else None,
             focus=gate.focus,
             truncated=meta.truncated,
             plan=gate.plan,

@@ -8,6 +8,7 @@ import { SideRail } from "./components/SideRail";
 import {
   AgentApiError,
   agentClientConfig,
+  calibrateTurn,
   createSession,
   fetchSessionTurns,
   getServiceMeta,
@@ -16,7 +17,7 @@ import {
 import type { RestoredTurn } from "./services/agent-client";
 import type { ServiceMeta } from "./services/service-meta";
 import { prepareAssistantRetry } from "./services/turn-retry";
-import type { ChatMessage, TurnPresentation } from "./types";
+import type { ChatMessage, TeachingRating, TurnPresentation } from "./types";
 
 type ViewMode = "chat" | "performance";
 
@@ -57,6 +58,7 @@ function restoredTurnToMessages(turn: RestoredTurn): ChatMessage[] {
       content: turn.assistantText,
       state: "complete",
       presentation: turn.presentation,
+      calibration: turn.calibration ?? undefined,
       turnId: turn.turnId,
       completedAt: at,
     },
@@ -148,7 +150,13 @@ export default function App() {
         // 取消不代表会话失效，不能因此删除仍可恢复的 sessionId。
         if (controller.signal.aborted) return;
         if (error instanceof DOMException && error.name === "AbortError") return;
-        clearStoredSessionId();
+        // 只有"确定用不了"的错误才允许丢弃这个 id。
+        // 网络抖动（fetch 抛 TypeError）或后端 5xx 都是可重试的瞬时故障，
+        // 一律清除会让用户在一次偶发断网后永久失去上次的对话入口——
+        // 而这里本就是为了"刷新不丢历史"才存在的。
+        if (error instanceof AgentApiError && !error.retryable) {
+          clearStoredSessionId();
+        }
       });
     return () => controller.abort();
     // 仅在挂载时执行一次；sessionRef 保证不与用户操作竞争
@@ -316,6 +324,25 @@ export default function App() {
     });
   }, [busy, messages, executeTurn]);
 
+  const rateExplanation = useCallback(async (messageId: string, turnId: string, rating: TeachingRating) => {
+    if (!sessionId) return;
+    setMessages((current) => current.map((message) =>
+      message.id === messageId ? { ...message, calibrationSaving: true, calibrationError: undefined } : message,
+    ));
+    try {
+      await calibrateTurn(sessionId, turnId, rating);
+      setMessages((current) => current.map((message) =>
+        message.id === messageId ? { ...message, calibration: rating, calibrationSaving: false } : message,
+      ));
+    } catch (error) {
+      setMessages((current) => current.map((message) =>
+        message.id === messageId
+          ? { ...message, calibrationSaving: false, calibrationError: error instanceof Error ? error.message : "无法保存反馈。" }
+          : message,
+      ));
+    }
+  }, [sessionId]);
+
   const startNewSession = useCallback(() => {
     // 历史恢复可能仍在飞行中。先关闭它的提交资格，避免用户点击 New 后
     // 延迟返回的旧会话重新覆盖空白的新会话。
@@ -400,6 +427,7 @@ export default function App() {
                 messages={messages}
                 onAction={sendPrompt}
                 onRetry={retryAssistant}
+                onCalibration={serviceMeta?.teachingCalibration ? rateExplanation : undefined}
                 serviceMeta={serviceMeta}
               />
             )}
