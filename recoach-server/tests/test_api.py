@@ -4,7 +4,6 @@ import json
 import os
 import uuid
 
-os.environ.setdefault("RECOACH_LLM_provider", "template")
 os.environ.setdefault("RECOACH_DEV_USER", "test_user")
 
 import pytest
