@@ -45,6 +45,8 @@ TUI 新增 `@earendil-works/pi-ai@0.85.1` 模型层，版本与现有 `pi-tui` �
 
 登录与选择模型是两步：登录后运行 `/model`，才能将讲解切换到新账号对应的模型。选择模型时也可以直接输入 `/model provider/model-id`；模型 ID 以 `/models provider` 或交互菜单为准。选择完成后，下方状态栏显示当前模型。
 
+DeepSeek V4.1 Flash 的官方 API ID 是 `deepseek-flash`，可直接输入 `/model deepseek/deepseek-flash`。TUI 在 DeepSeek 登录后、打开该 Provider 的选择菜单或执行 `/models deepseek` 时，通过已配置凭证请求官方 `GET /models`，更新名称、ID、上下文与输出限制等元数据。网络或凭证错误会提示并保留离线目录；旧 `deepseek-v4-flash` 等名称显示为兼容旧 ID。该接口不提供价格，本 TUI 不将目录中的内部价格占位值用于费用报告。参考 [DeepSeek 模型目录](https://api-docs.deepseek.com/api/list-models/) 和 [模型说明](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)。
+
 也支持在启动 TUI 前配置，避免授权过程中切换窗口：
 
 ```powershell

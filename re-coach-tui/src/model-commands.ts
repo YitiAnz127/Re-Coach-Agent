@@ -23,6 +23,10 @@ export async function runModelCommand(text: string, runtime: ModelRuntime, ui: A
     throw new ModelSetupError("参数过多，请使用 /help 查看格式。");
   }
   const providers = runtime.models.getProviders();
+  const refresh = async (provider: string) => {
+    const warning = await runtime.refreshCatalog(provider, ui.signal);
+    if (warning) ui.notify({ type: "info", message: warning });
+  };
   const pickProvider = async (ids: readonly string[]) => arg || ui.prompt({
     type: "select", message: "选择 Provider（Esc 取消）", options: ids.map(id => ({
       id, label: providers.find(p => p.id === id)?.name ?? id, description: id,
@@ -46,6 +50,7 @@ export async function runModelCommand(text: string, runtime: ModelRuntime, ui: A
     }));
     if (type !== "oauth" && type !== "api_key") throw new ModelSetupError("不支持的登录方式。");
     await runtime.login(id, type, ui);
+    await refresh(id);
     return "登录成功，凭证已保存。用 /model 选择该 Provider 的模型后开始提问。";
   }
   if (command === "/logout") {
@@ -59,9 +64,10 @@ export async function runModelCommand(text: string, runtime: ModelRuntime, ui: A
   if (command === "/model") {
     let provider: string, model: string;
     const slash = arg?.indexOf("/") ?? -1;
-    if (arg && slash > 0) { provider = arg.slice(0, slash); model = arg.slice(slash + 1); }
+    if (arg && slash > 0) { provider = arg.slice(0, slash); model = arg.slice(slash + 1); await refresh(provider); }
     else {
       provider = await pickProvider(providers.filter(p => p.getModels().length).map(p => p.id));
+      await refresh(provider);
       const models = runtime.models.getModels(provider);
       if (!models.length) throw new ModelSetupError("此 Provider 没有可选模型。");
       model = await ui.prompt({ type: "select", message: "选择模型", options: models.map(m => ({
@@ -72,9 +78,10 @@ export async function runModelCommand(text: string, runtime: ModelRuntime, ui: A
     return `已切换并保存模型：${selected.provider}/${selected.id}`;
   }
   if (command === "/models") {
+    if (arg) await refresh(arg);
     const models = runtime.models.getModels(arg);
     if (!models.length) return "没有匹配模型。用 /model 交互选择。";
-    return models.slice(0, 40).map(m => `${m.provider}/${m.id}`).join("\n")
+    return models.slice(0, 40).map(m => `${m.provider}/${m.id} — ${m.name}`).join("\n")
       + (models.length > 40 ? `\n共 ${models.length} 个；用 /models provider 缩小范围或 /model 选择。` : "");
   }
   return "未知命令。\n" + MODEL_HELP;

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +13,7 @@ async function fixture() {
   const cfg = loadConfig({ RECOACH_DATA_DIR: dir, RECOACH_LLM_PROVIDER: "template" });
   return { cfg, runtime: new ModelRuntime(cfg), dir };
 }
-afterEach(async () => { await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
+afterEach(async () => { vi.restoreAllMocks(); await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
 
 describe("pi model selection and commands", () => {
   it("persists an explicit model and restores it without touching learning history", async () => {
@@ -33,6 +33,7 @@ describe("pi model selection and commands", () => {
     expect(cfg.llmProvider).toBe("template");
   });
   it("routes commands locally, supports API-key login/logout and never returns a secret", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ data: [{ id: "deepseek-flash", name: "DeepSeek V4.1 Flash" }] }));
     const { runtime } = await fixture();
     const model = runtime.models.getModels("deepseek")[0]!;
     const interaction = { prompt: async () => "test-only-secret", notify: () => {} };

@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { AuthInteraction, AuthType, Models } from "@earendil-works/pi-ai";
+import type { AuthInteraction, AuthType, Models, MutableModels } from "@earendil-works/pi-ai";
 import type { AppConfig } from "./config.js";
 import { FileCredentials, writePrivateJson } from "./credentials.js";
+import { withDeepSeekDiscovery } from "./deepseek-catalog.js";
 
 export class ModelSetupError extends Error {}
 export function modelCommandError(error: unknown): string {
@@ -31,6 +32,17 @@ export class ModelRuntime {
         fileExists: async file => existsSync(file.startsWith("~/") ? join(homedir(), file.slice(2)) : file),
       },
     });
+    if (!models) {
+      const deepseek = this.models.getProvider("deepseek");
+      if (deepseek) (this.models as MutableModels).setProvider(withDeepSeekDiscovery(deepseek));
+    }
+  }
+
+  async refreshCatalog(provider: string, signal?: AbortSignal): Promise<string | undefined> {
+    if (provider !== "deepseek") return;
+    const result = await this.models.refresh({ providers: [provider], signal });
+    if (result.aborted) throw new DOMException("Cancelled", "AbortError");
+    if (result.errors.size) return "DeepSeek 模型目录刷新失败，保留离线目录；请检查网络或 API key。";
   }
 
   selected() {
@@ -58,8 +70,11 @@ export class ModelRuntime {
     let saved: { provider?: unknown; model?: unknown };
     try { saved = JSON.parse(text); }
     catch { throw new ModelSetupError("model.json 格式错误，请修正或移走该文件。"); }
-    if (!saved || typeof saved.provider !== "string" || typeof saved.model !== "string"
-      || !this.models.getModel(saved.provider, saved.model)) throw new ModelSetupError("已保存的模型不可用，请用 recoach model 重新选择。");
+    if (!saved || typeof saved.provider !== "string" || typeof saved.model !== "string") {
+      throw new ModelSetupError("已保存的模型不可用，请用 recoach model 重新选择。");
+    }
+    if (!this.models.getModel(saved.provider, saved.model)) await this.refreshCatalog(saved.provider);
+    if (!this.models.getModel(saved.provider, saved.model)) throw new ModelSetupError("已保存的模型不可用，请用 recoach model 重新选择。");
     this.cfg.llmProvider = "pi";
     this.cfg.llmModel = `${saved.provider}/${saved.model}`;
     return true;
