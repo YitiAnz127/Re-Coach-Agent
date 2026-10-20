@@ -20,6 +20,9 @@ import type { AgentSession, AgentTurnEvent } from "../agent.js";
 import { editorTheme, markdownTheme, selectListTheme, theme } from "./theme.js";
 import { sanitizeTerminalText } from "./sanitize.js";
 import type { ClarificationOption, TurnPresentation } from "../types.js";
+import { getModelRuntime, modelCommandError } from "../model-runtime.js";
+import { isModelCommand, runModelCommand } from "../model-commands.js";
+import { createAuthInteraction } from "./auth.js";
 
 const BRAND = "知返 Re: Coach";
 
@@ -58,6 +61,7 @@ export async function startApp(
 
   let activeLoader: Loader | null = null;
   let processing = false;
+  let commandAbort: AbortController | undefined;
 
   function showLoader(msg: string): void {
     hideLoader();
@@ -130,6 +134,7 @@ export async function startApp(
   function renderFooter(presentation?: TurnPresentation): void {
     footer.clear();
     const bits: string[] = [];
+    bits.push(theme.meta(sanitizeTerminalText(cfg.llmProvider === "pi" ? cfg.llmModel : cfg.llmProvider)));
     if (presentation?.personalization.length) {
       bits.push(`${theme.personalization("● 已应用偏好")} ${presentation.personalization.length} 条`);
     }
@@ -227,6 +232,23 @@ export async function startApp(
     if (processing) return;
     const text = raw.trim();
     if (!text) return;
+    if (isModelCommand(text)) {
+      processing = true;
+      editor.setText("");
+      commandAbort = new AbortController();
+      try {
+        const result = await runModelCommand(text, getModelRuntime(cfg), createAuthInteraction(ui, editorContainer, commandAbort));
+        // Local notice only: never send commands or auth prompt values through runTurn.
+        chatContainer.addChild(new Text(sanitizeTerminalText(result ?? ""), 1, 1));
+      } catch (error) {
+        chatContainer.addChild(new Text(theme.error(modelCommandError(error)), 1, 1));
+      } finally {
+        commandAbort = undefined;
+        editorContainer.clear(); editorContainer.addChild(editor); ui.setFocus(editor);
+        processing = false; renderFooter(); ui.requestRender();
+      }
+      return;
+    }
     processing = true;
     try {
       addUserMessage(text);
@@ -288,9 +310,16 @@ export async function startApp(
     );
   }
   chatContainer.addChild(new Spacer(1));
+  chatContainer.addChild(new Text(theme.dim("/login 登录  /model 选模型  /auth 凭证状态  /help 帮助"), 1, 0));
+  renderFooter();
 
   ui.addInputListener((data) => {
+    if (commandAbort && matchesKey(data, Key.escape)) {
+      commandAbort.abort();
+      return { consume: true };
+    }
     if (matchesKey(data, Key.ctrl("c"))) {
+      commandAbort?.abort();
       ui.stop();
       process.exit(0);
     }

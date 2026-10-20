@@ -3,9 +3,32 @@
 import { checkBaseUrlSecurity, loadConfig, ensureDataDir } from "./config.js";
 import { Store } from "./store.js";
 import { startApp } from "./ui/app.js";
+import { getModelRuntime, modelCommandError } from "./model-runtime.js";
+import { MODEL_HELP, runModelCommand } from "./model-commands.js";
+import { cliAuthInteraction } from "./cli-auth.js";
+import { sanitizeTerminalText } from "./ui/sanitize.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+  const args = process.argv.slice(2);
+  if (args.length) {
+    if (args[0] === "--help" || args[0] === "-h") {
+      process.stdout.write(MODEL_HELP.replace(/^\//gm, "recoach ") + "\n");
+      return;
+    }
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    process.once("SIGINT", cancel);
+    try {
+      const result = await runModelCommand("/" + args.join(" "), getModelRuntime(cfg), cliAuthInteraction(controller));
+      process.stdout.write(sanitizeTerminalText(result ?? MODEL_HELP) + "\n");
+    } finally { process.removeListener("SIGINT", cancel); }
+    return;
+  }
+  if ((!process.env.RECOACH_LLM_PROVIDER || process.env.RECOACH_LLM_PROVIDER === "pi")
+    && !process.env.RECOACH_LLM_MODEL) {
+    await getModelRuntime(cfg).restoreSelection();
+  }
   // 明文 http 会把 Authorization: Bearer <key> 发到网络上，必须显式阻断。
   const urlProblem =
     checkBaseUrlSecurity(cfg.llmBaseUrl, Boolean(cfg.llmApiKey)) ??
@@ -34,6 +57,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(modelCommandError(err));
   process.exit(1);
 });

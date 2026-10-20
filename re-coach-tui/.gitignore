@@ -12,6 +12,8 @@ npm.out.log
 # ---- 本地数据：含完整对话历史与学习偏好 ----
 .recoach/
 store.json
+auth.json
+model.json
 *.tmp
 
 # ---- 机密 ----

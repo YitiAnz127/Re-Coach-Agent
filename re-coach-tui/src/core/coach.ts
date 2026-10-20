@@ -2,6 +2,7 @@
 import type { ResolvedTask, StreamDelta } from "../types.js";
 import { resolveProvider, type AppConfig } from "../config.js";
 import { codePointLength } from "../text.js";
+import { PiStreamFailure, streamPi } from "./pi-stream.js";
 
 export interface CoachMeta {
   provider: string;
@@ -64,6 +65,7 @@ export class ProviderFailure extends Error {
 
 /** 把 provider 失败归类。只返回类别，绝不带出异常原文（可能含 URL / 响应体）。 */
 export function classifyProviderFailure(err: unknown): string {
+  if (err instanceof PiStreamFailure) return err.reason;
   if (err && typeof err === "object" && "status" in err) {
     const status = Number((err as { status?: unknown }).status);
     if (status === 401 || status === 403) return "AUTH";
@@ -508,7 +510,8 @@ export async function* streamExplanation(
   let streamer:
     | ((s: string, u: string, m: CoachMeta) => AsyncGenerator<StreamDelta>)
     | undefined;
-  if (provider === "openai_compatible") streamer = (s, u, m) => streamOpenAICompatible(cfg, s, u, m);
+  if (provider === "pi") streamer = (s, u, m) => streamPi(cfg, s, u, m);
+  else if (provider === "openai_compatible") streamer = (s, u, m) => streamOpenAICompatible(cfg, s, u, m);
   else if (provider === "deepseek") streamer = (s, u, m) => streamDeepseek(cfg, s, u, m);
   else streamer = (s, u, m) => streamAnthropic(cfg, s, u, m);
 

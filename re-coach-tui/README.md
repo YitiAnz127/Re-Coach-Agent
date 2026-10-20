@@ -28,7 +28,59 @@ npm run build
 npm start
 ```
 
-配置真实模型（任选其一）后用 `npm start`：
+### 在 TUI 中登录和选模型（pi-ai）
+
+TUI 新增 `@earendil-works/pi-ai@0.85.1` 模型层，版本与现有 `pi-tui` 对齐。教学门控、作用域记忆、上下文编译与会话仍由 Re:Coach 管理。启动后输入：
+
+```text
+/login                  选择 Provider 和授权方式
+/model                  选择模型并保存
+/auth                   查看本地凭证状态，不显示密钥
+/logout                 删除某个 Provider 的本地凭证
+/models deepseek        查看该 Provider 的内置模型目录
+/help                   查看命令帮助
+```
+
+`/login` 按 Provider 实际能力提供浏览器/设备码 OAuth 或 API key 输入。授权链接和设备码会显示在临时操作区域，请在浏览器完成授权；密钥与回调码输入不回显，不进入学习对话、事件台账或记忆。按 Esc 取消操作。不是每个 Provider 都有 OAuth；例如 DeepSeek 使用 API key。
+
+登录与选择模型是两步：登录后运行 `/model`，才能将讲解切换到新账号对应的模型。选择模型时也可以直接输入 `/model provider/model-id`；模型 ID 以 `/models provider` 或交互菜单为准。选择完成后，下方状态栏显示当前模型。
+
+也支持在启动 TUI 前配置，避免授权过程中切换窗口：
+
+```powershell
+npm start -- login
+npm start -- model
+npm start
+
+# 指定 Provider（示例，不会自动登录）
+npm start -- login openai-codex oauth
+npm start -- login deepseek api_key
+npm start -- auth
+npm start -- logout deepseek
+```
+
+全局安装后可使用相同的 `recoach login`、`recoach model`、`recoach auth` 等命令。
+
+凭证独立保存在 `~/.recoach/auth.json`，模型选择保存在 `~/.recoach/model.json`；`RECOACH_DATA_DIR` 可同时覆盖它们与学习数据的目录。凭证是本地 JSON 文件：采用受限文件模式、原子替换和跨进程锁，不提供 OS 密钥链加密。不要提交、分享该文件或把它当作普通学习数据导出。TUI 不会自动读取或改写其他 pi 应用的账号文件。
+
+没有显式旧 Provider/模型环境变量时，重启会恢复已保存的模型；`RECOACH_LLM_PROVIDER=pi` 且未指定 `RECOACH_LLM_MODEL` 时也会恢复。其他显式环境配置优先。命令行指定 pi 模型时，使用 `RECOACH_LLM_PROVIDER=pi`，`RECOACH_LLM_MODEL=provider/model-id`。
+
+新路径继续保留流式正文/思考分流、读取空闲超时、有限续写与降级披露。OAuth 刷新由 pi-ai 执行，并在 Re:Coach 的持久凭证锁内提交；刷新失败保留原凭证供重试或重新登录。登录成功只说明取得并保存了凭证，实际模型权限、配额和连接仍需真实请求验证。
+
+相关官方接口：[Models 与 CredentialStore](https://github.com/earendil-works/pi/blob/v0.85.1/packages/ai/README.md#auth)、[OAuth](https://github.com/earendil-works/pi/blob/v0.85.1/packages/ai/README.md#oauth-providers)。
+
+### 兼容原有环境变量方式
+
+原有 `template`、`deepseek`、`openai_compatible`、`anthropic` 调用路径保留。自建 OpenAI-compatible Base URL 继续用此方式；TUI 不会自动读取 `.env`。Windows PowerShell 示例：
+
+```powershell
+$env:RECOACH_LLM_PROVIDER = "deepseek"
+$env:RECOACH_DEEPSEEK_API_KEY = "你的密钥"
+$env:RECOACH_DEEPSEEK_MODEL = "账户可用的模型ID"
+npm start
+```
+
+以下为 Windows CMD 环境变量示例（不是 Bash 或 PowerShell 语法），任选其一后用 `npm start`：
 
 ```bash
 # DeepSeek

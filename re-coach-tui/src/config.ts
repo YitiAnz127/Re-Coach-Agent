@@ -9,7 +9,7 @@ export interface AppConfig {
   storeFile: string;
   user: string;
   // 主 Coach 模型
-  llmProvider: "template" | "openai_compatible" | "deepseek" | "anthropic";
+  llmProvider: "template" | "openai_compatible" | "deepseek" | "anthropic" | "pi";
   llmBaseUrl: string;
   llmApiKey: string;
   llmModel: string;
@@ -87,6 +87,7 @@ function parseReasoningEffort(raw: string): AppConfig["deepseekReasoningEffort"]
 }
 
 export function resolveProvider(cfg: AppConfig): [AppConfig["llmProvider"], string] {
+  if (cfg.llmProvider === "pi") return ["pi", cfg.llmModel];
   if (cfg.llmProvider === "openai_compatible" && cfg.llmApiKey && cfg.llmBaseUrl && cfg.llmModel) {
     return ["openai_compatible", cfg.llmModel];
   }
