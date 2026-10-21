@@ -71,6 +71,10 @@ npm start -- logout deepseek
 
 相关官方接口：[Models 与 CredentialStore](https://github.com/earendil-works/pi/blob/v0.85.1/packages/ai/README.md#auth)、[OAuth](https://github.com/earendil-works/pi/blob/v0.85.1/packages/ai/README.md#oauth-providers)。
 
+### 终端公式显示
+
+TUI 使用 pi 的 Unicode 数学近似排版，不是浏览器的 KaTeX。能容纳的块公式保留分式与运算符的原生排布；过宽公式自动采用带明确括号的线性表示，避免分子、分母分别换行后错位。新回答、流式完成后的内容与历史回放采用同一宽度规则，窗口变宽后可恢复原生排版；保存的回答原文不变。部分上下标字符没有对应 Unicode 字形，会保留 `W_Q`、`x^(...)` 等文本记法。代码示例与尚未闭合的公式不被改写。
+
 ### 兼容原有环境变量方式
 
 原有 `template`、`deepseek`、`openai_compatible`、`anthropic` 调用路径保留。自建 OpenAI-compatible Base URL 继续用此方式；TUI 不会自动读取 `.env`。Windows PowerShell 示例：

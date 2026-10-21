@@ -23,6 +23,7 @@ import type { ClarificationOption, TurnPresentation } from "../types.js";
 import { getModelRuntime, modelCommandError } from "../model-runtime.js";
 import { isModelCommand, runModelCommand } from "../model-commands.js";
 import { createAuthInteraction } from "./auth.js";
+import { terminalMathOptions } from "./math-layout.js";
 
 const BRAND = "知返 Re: Coach";
 
@@ -85,7 +86,7 @@ export async function startApp(
     const box = new Box(1, 1, theme.userBg);
     // 用户自己的输入本属可信，但粘贴内容可能夹带转义字节，统一净化做纵深防御。
     const safe = sanitizeTerminalText(text);
-    box.addChild(new Markdown(theme.userText(`**你：** ${safe}`), 0, 0, mdTheme));
+    box.addChild(new Markdown(theme.userText(`**你：** ${safe}`), 0, 0, mdTheme, undefined, terminalMathOptions));
     chatContainer.addChild(box);
     ui.requestRender();
   }
@@ -99,7 +100,7 @@ export async function startApp(
     assistantBody = "";
     thinkingBuffer = "";
     chatContainer.addChild(new Spacer(1));
-    assistantMd = new Markdown("", 1, 0, mdTheme);
+    assistantMd = new Markdown("", 1, 0, mdTheme, undefined, terminalMathOptions);
     chatContainer.addChild(assistantMd);
     ui.requestRender();
   }
@@ -288,7 +289,7 @@ export async function startApp(
     for (const turn of history) {
       addUserMessage(turn.userText);
       const box = new Box(1, 1);
-      box.addChild(new Markdown(sanitizeTerminalText(turn.assistantText), 0, 0, mdTheme));
+      box.addChild(new Markdown(sanitizeTerminalText(turn.assistantText), 0, 0, mdTheme, undefined, terminalMathOptions));
       chatContainer.addChild(box);
       chatContainer.addChild(new Spacer(1));
     }
