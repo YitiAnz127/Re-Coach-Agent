@@ -39,7 +39,7 @@ Re-Coach-Agent/
 
 ## 运行时目录
 
-运行时会生成以下目录（均已在 `.gitignore` 中）：
+运行时会生成以下目录（仓库内的路径均已在 `.gitignore` 中）：
 
 ```
 data/                            # Docker 部署的数据库挂载点
@@ -143,8 +143,10 @@ re-coach-tui/
 │   ├── store.ts                # JSON 文件持久化（替代 SQLite）
 │   ├── orchestrator.ts         # Turn 编排流水线
 │   ├── agent.ts / ids.ts / tokens.ts / types.ts / text.ts
-│   ├── core/                   # gate / teaching / memory / compiler / coach / brief / events / selection
-│   └── ui/                     # app / theme / sanitize（pi-tui 界面）
+│   ├── cli-auth.ts / credentials.ts / model-runtime.ts / model-commands.ts / deepseek-catalog.ts
+│   │                           # pi-ai 登录、本地凭证与模型目录
+│   ├── core/                   # gate / teaching / memory / compiler / coach / brief / events / selection / pi-stream
+│   └── ui/                     # app / auth / theme / sanitize（pi-tui 界面）
 └── tests/                      # TUI 测试（核心逻辑 / 与后端对齐回归 / 可选真模型 E2E）
 ```
 
@@ -182,7 +184,7 @@ ai-coach-skill-repo/
   - `backend` 服务（容器内 8000，宿主侧由 `RECOACH_BACKEND_PORT` 决定，只绑 `127.0.0.1`）
   - `frontend` 服务（`127.0.0.1:4173`，唯一对外入口，同源反代 `/api`）
   - `./data` 数据卷挂载、健康检查、内存/CPU 上限、`no-new-privileges`
-  - 固定网段 `172.28.0.0/24`，与 `RECOACH_TRUSTED_HOSTS` 默认值必须一致
+  - 固定网段 `172.28.0.0/24`，与 compose 中 `RECOACH_TRUSTED_HOSTS` 的默认值必须一致
 
 ## CI/CD
 

@@ -126,7 +126,7 @@ RECOACH_LLM_MAX_CONTINUATIONS=2
 - 后端会请求 `{RECOACH_DEEPSEEK_BASE_URL}/chat/completions`；
 - 正文 `content` 通过 `assistant.delta` SSE 事件实时转发前端；
 - 思考过程 `reasoning_content` 通过 `assistant.thinking` SSE 事件实时转发前端折叠展示；它不进入聊天记录、Event Ledger 或记忆系统；
-- 首字延迟（TTFT）与思考 TTFT 分开记录，随性能指标返回。
+- 正文首字延迟（TTFT）与思考 TTFT 分开记录在 `model_called` 事件与 `/api/v1/metrics/summary`；本轮 `presentation.metrics` 只带一个 `timeToFirstTokenMs`。
 
 如果账户不支持示例模型，请将 `RECOACH_DEEPSEEK_MODEL` 替换为账户当前可用的精确 API model ID。
 
@@ -318,7 +318,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/meta
 | `fallback` | 本轮是否发生了模板降级 |
 | `fallbackReason` | 降级的粗粒度原因：`AUTH` / `QUOTA` / `TIMEOUT` / `NETWORK` / `PROVIDER_ERROR` / `HTTP_ERROR` / `ERROR` |
 
-判断标准是这两个字段，**不是** `/meta` 里的配置值：配置了真 key 但鉴权失败时，`/meta` 依然显示 `deepseek`，而 `metrics.provider` 会是 `template`、`fallback` 为 `true`。Web 界面的 Performance 视图展示的就是这两个字段（`ModelBadge` 与侧栏都刻意不从 `/meta` 取值）。
+判断标准是这两个字段，**不是** `/meta` 里的配置值：配置了真 key 但鉴权失败时，`/meta` 依然显示 `deepseek`，而 `metrics.provider` 会是 `template`、`fallback` 为 `true`。Web 界面的 Performance 视图优先取本轮 `presentation.metrics` 的 `provider` / `model`，只有这两个字段缺失时才回退到 `/meta` 的配置值。
 
 `fallbackReason=AUTH` 说明密钥无效、过期或无权限；`NETWORK` 说明连不上 Base URL； `HTTP_ERROR` 通常是模型名或接口地址写错。
 

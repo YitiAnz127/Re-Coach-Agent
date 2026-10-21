@@ -60,7 +60,7 @@ npm ci
 npm run dev        # http://127.0.0.1:4173；/api 由 Vite 代理到 127.0.0.1:8000
 ```
 
-前端默认就是连真实后端（`VITE_API_BASE_URL` 缺省为同源 `/api/v1`），仓库**没有**提供前端 `.env.example`；只有需要脱机演示时才自建 `.env.local` 写 `VITE_DEMO_MODE=true`。 macOS / Linux 把上面的 PowerShell 命令换成等价的 `python3 -m venv` / `source .venv/bin/activate`。
+前端默认就是连真实后端（`VITE_API_BASE_URL` 缺省为同源 `/api/v1`），仓库**没有**提供前端 `.env.example`；只有需要脱机演示时才自建 `.env.local` 写 `VITE_DEMO_MODE=true`。macOS / Linux 上 `uv` 命令不变，把 `Copy-Item` 换成 `cp`、`.\.venv\Scripts\python.exe` 换成 `.venv/bin/python` 即可。
 
 **TUI（终端版）**：`re-coach-tui/` 是独立应用，不依赖 `recoach-server`：
 
@@ -77,7 +77,7 @@ npm start
 
 ## 📊 项目状态
 
-- ✅ 四个可独立运行的部分：后端、Web 前端、TUI、AI Coach Skill
+- ✅ 四个可独立使用的部分：后端、Web 前端、TUI、AI Coach Skill（行为层）
 - ✅ Docker 容器化；GitHub Actions 跑后端测试与一致性审计、前端类型检查与测试、TUI 类型检查与测试、镜像可构建
 - ✅ 能力诚实性可查询：`GET /api/v1/meta` 的 `capabilities` 逐项声明已实现与未实现
 - 🟢 单用户本地自用，可运行、可部署
@@ -94,10 +94,10 @@ npm start
 最小 Session 状态理解
   → Clarification Gate（必要时只问一个高信息量问题）
   → 形成 ResolvedTask
-  → 按当前表述与局部反馈确定本轮教学起点
   → 五级作用域检索稳定记忆
+  → 按当前表述与局部反馈确定本轮教学起点
   → 确定性 Context Compiler 编译上下文（无额外 Planner LLM）
-  → 单次主 Coach 流式输出
+  → 主 Coach 流式输出（截断时最多续写两次）
   → 行为与结果写入 Event Ledger
 ```
 
@@ -105,11 +105,11 @@ npm start
 
 - 🧠 **智能澄清**：三态门控 `READY` / `NEEDS_CLARIFICATION` / `ANSWER_WITH_ASSUMPTION`，最多连续两轮
 - 📝 **作用域记忆**：五级作用域（用户 / 领域 / 概念 / 命题 / 任务）防止错误泛化
-- ⚡ **流式响应**：SSE 实时推送，思考过程（`reasoning_content`）与正文分别可见、分别计时
+- ⚡ **流式响应**：SSE 实时推送，思考过程（`reasoning_content`）与正文分别可见；首字延迟、记忆检索与编译耗时分别记录在指标面板
 - 🎯 **确定性编译**：记忆如何进入上下文由规则决定，可追溯、可复现
 - 📍 **逐问教学起点**：把目标深度与已有前置分开；可对单个概念反馈“太基础 / 正合适 / 跳得太快”
 - 🔄 **自动学习**：从反馈中提取稳定偏好，同作用域更新保留 `archived + superseded_by` 演化链
-- 🔬 **公平对照**：Fair Fork 冻结当前会话，由服务端并行生成固定 On/Off 两个只读分支
+- 🔬 **公平对照**：Fair Fork 冻结当前会话的记忆快照，固定 On/Off 两个记忆只读分支，并发生成同一问题的对照回答
 - 🔒 **能力诚实**：未实现的能力在 `/api/v1/meta` 中一律为 `false`，界面不显示占位假数据
 
 ---
@@ -118,7 +118,7 @@ npm start
 
 | 目录 | 内容 | 说明 |
 |---|---|---|
-| `recoach-server/` | FastAPI + SQLite 后端 | 会话、记忆、事件与指标的唯一真相来源 |
+| `recoach-server/` | FastAPI + SQLite 后端 | Web 端的会话、记忆、事件与指标唯一真相来源 |
 | `recoach-frontend/` | React Web 客户端 | 对话、思考折叠、个性化依据、Fair Fork 对照 |
 | `re-coach-tui/` | 终端 TUI（Node ≥ 22.19） | 独立应用，在本进程内用 TypeScript 实现同一套业务逻辑 |
 | `ai-coach-skill-repo/` | AI Coach Skill | 面向 Hermes / Codex / Claude Desktop 的行为层，与上面三个应用无代码耦合 |
@@ -133,9 +133,9 @@ npm start
 
 **后端**：FastAPI + SQLite（WAL + FTS5，不可用时降级 LIKE）+ SSE；镜像与 CI 使用 Python 3.10，本地 venv 使用 3.11
 
-**TUI**：TypeScript + `@earendil-works/pi-tui` + chalk，JSON 文件持久化
+**TUI**：TypeScript + `@earendil-works/pi-tui` / `pi-ai` + chalk，JSON 文件持久化
 
-**LLM**：`template`（默认，无需密钥）/ `openai_compatible` / `deepseek` / `anthropic`
+**LLM**：`template`（默认，无需密钥）/ `openai_compatible` / `deepseek` / `anthropic`；TUI 另有 `pi` 登录通道
 
 ---
 
@@ -170,7 +170,7 @@ cd recoach-frontend && npm test
 cd re-coach-tui && npm test
 ```
 
-> 这里刻意不写用例数量——写死的数字会随每次加测试而腐烂，各子项目 README 里的数字都取自实测输出。三个子项目都有 CI job（[.github/workflows/test.yml](.github/workflows/test.yml)）：`backend`（Python 3.10 上 pytest + 跨文件一致性审计）、`frontend`（Node 22 上类型检查 + 测试）、`tui`（typecheck + build + vitest），外加 `docker-build` 验证镜像可构建。
+> 这里刻意不写用例数量——写死的数字会随每次加测试而腐烂，各子项目 README 也只描述覆盖范围。三个子项目都有 CI job（[.github/workflows/test.yml](.github/workflows/test.yml)）：`backend`（Python 3.10 上 pytest + 跨文件一致性审计）、`frontend`（Node 22 上类型检查 + 测试）、`tui`（typecheck + build + vitest），外加 `docker-build` 验证镜像可构建。
 
 ### 跨文件一致性审计
 

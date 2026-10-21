@@ -28,7 +28,7 @@
 - 刷新后恢复对话：`sessionId` 落在 `localStorage`，重新加载时用 `GET /api/v1/sessions/{sessionId}/turns` 拉回该会话已完成的轮次并原样重放（用户原始输入按原文恢复，编号选择不会被替换成长文本）。`localStorage` 不可用时（隐私模式等）只是刷新后不恢复，不影响本次会话。
 - Performance 视图读取 `/api/v1/meta`，展示后端配置的 provider、model 与 DeepSeek Thinking 强度；而**本轮实际**使用了哪个 provider 取自 `presentation.metrics`——真实模型失败降级时二者会不一致，界面以后者为准。
 - 普通 Chat 不提供逐轮 Memory On/Off 开关，统一使用后端配置的默认记忆策略。
-- Performance 只保留 `Fair Fork Comparison`：用户输入问题并主动点击后，系统才会冻结当前 Session，并行生成固定 On/Off 两个只读分支；不会自动运行。
+- Performance 只保留 `Fair Fork Comparison`：用户输入问题并主动点击后，系统才会冻结当前 Session，并行生成固定 On/Off 两个记忆只读分支；不会自动运行。
 - `experiment`、`retrospective` 等可选模块缺失时自动隐藏，不显示占位假数据。
 - 错误消息使用纯文本展示，不执行服务端 HTML。
 - 桌面/移动响应式布局、键盘操作、可见焦点和减少动画样式。
@@ -65,7 +65,7 @@
 
 ## 3. 环境要求
 
-- Node.js 22 或更高，npm 11 或更高。
+- Node.js 22 或更高（npm 随 Node 安装；CI 使用 Node 22 自带的 npm）。
 - 后端默认运行于 `http://127.0.0.1:8000`。
 
 ## 4. 安装
@@ -205,4 +205,4 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 
 ---
 
-> **知返 Re: Coach 前端把后端的最小状态理解、作用域记忆检索与一次主模型调用呈现为清晰对话：思考可见、依据可查、错误可重试、刷新可恢复，未实现的能力不假装存在。**
+> **知返 Re: Coach 前端把后端的最小状态理解、作用域记忆检索与主模型流式输出呈现为清晰对话：思考可见、依据可查、错误可重试、刷新可恢复，未实现的能力不假装存在。**

@@ -8,7 +8,7 @@
 
 - 🧠 **智能澄清**：宽泛提问先问一个高信息量问题，连续两轮后带假设继续
 - 📍 **逐问教学起点**：目标深度与已有前置分开；讲解后输入 `/pace basic`、`/pace ok` 或 `/pace fast`，只校正上一个概念的后续起点
-- 📝 **作用域记忆**：五级作用域（领域/概念/命题/任务）+ 反馈门控自动记忆
+- 📝 **作用域记忆**：五级作用域（用户/领域/概念/命题/任务）+ 反馈门控自动记忆
 - 🎯 **确定性编译**：记忆按证据强度加权召回，预算内进 Capsule
 - ⚡ **流式输出**：思考过程与正文实时渲染（Markdown）
 - 🔄 **自动学习**：从反馈中提取稳定偏好（"以后先给公式"→长期记忆）
@@ -151,10 +151,15 @@ src/
   config.ts             配置（RECOACH_* 环境变量）
   store.ts              JSON 文件持久化
   agent.ts              Turn 事件契约
+  cli-auth.ts           pi-ai 登录交互（OAuth / API key）
+  credentials.ts        本地凭证文件（auth.json）
+  model-runtime.ts      pi-ai 模型运行时（模型选择与恢复）
+  model-commands.ts     /login /model /auth 等命令
+  deepseek-catalog.ts   DeepSeek 模型目录（在线刷新，失败回退离线目录）
   orchestrator.ts       Turn 编排流水线
-  core/                业务逻辑（gate/memory/compiler/coach/brief/events/selection）
+  core/                业务逻辑（gate/teaching/memory/compiler/coach/brief/events/selection/pi-stream）
   text.ts              码点长度（与 Python len() 对齐）
-  ui/                  pi-tui 界面（app / theme / sanitize）
+  ui/                  pi-tui 界面（app / auth / theme / sanitize）
 tests/                 核心逻辑、加固回归、与后端的对齐回归，以及可选的真模型 E2E
 ```
 

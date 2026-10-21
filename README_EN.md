@@ -60,7 +60,7 @@ npm ci
 npm run dev        # http://127.0.0.1:4173; /api is proxied to 127.0.0.1:8000 by Vite
 ```
 
-The frontend connects to the real backend by default (`VITE_API_BASE_URL` defaults to the same-origin `/api/v1`), and the repo ships **no** frontend `.env.example`; create `.env.local` with `VITE_DEMO_MODE=true` only when you want the offline demo. On macOS / Linux replace the PowerShell commands with the equivalent `python3 -m venv` / `source .venv/bin/activate`.
+The frontend connects to the real backend by default (`VITE_API_BASE_URL` defaults to the same-origin `/api/v1`), and the repo ships **no** frontend `.env.example`; create `.env.local` with `VITE_DEMO_MODE=true` only when you want the offline demo. On macOS / Linux the `uv` commands are unchanged — replace `Copy-Item` with `cp` and `.\.venv\Scripts\python.exe` with `.venv/bin/python`.
 
 **TUI (terminal edition)**: `re-coach-tui/` is a standalone application that does not depend on `recoach-server`:
 
@@ -77,7 +77,7 @@ npm start
 
 ## 📊 Project Status
 
-- ✅ Four independently runnable parts: backend, web frontend, TUI, AI Coach Skill
+- ✅ Four independently usable parts: backend, web frontend, TUI, AI Coach Skill (behaviour layer)
 - ✅ Docker images; GitHub Actions runs backend tests and the consistency audit, frontend type checks and tests, TUI type checks and tests, and verifies the images build
 - ✅ Honest capability reporting: the `capabilities` object in `GET /api/v1/meta` declares what is and is not implemented
 - 🟢 Single-user local use, runnable and deployable
@@ -94,10 +94,10 @@ What actually happens in one Turn:
 Minimal session state
   → Clarification Gate (ask exactly one high-information question when needed)
   → ResolvedTask
-  → Query-wise teaching start from explicit statements and scoped feedback
   → Five-level scoped retrieval of stable memories
+  → Query-wise teaching start from explicit statements and scoped feedback
   → Deterministic Context Compiler builds the context (no extra planner LLM)
-  → One streaming main-Coach call
+  → One main-Coach streaming pass (up to two continuations on truncation)
   → Behaviour and outcome recorded in the Event Ledger
 ```
 
@@ -105,11 +105,11 @@ Minimal session state
 
 - 🧠 **Smart clarification**: three-state gate `READY` / `NEEDS_CLARIFICATION` / `ANSWER_WITH_ASSUMPTION`, at most two consecutive rounds
 - 📝 **Scoped memory**: five-level scope (user / domain / concept / proposition / task) prevents wrong generalization
-- ⚡ **Streaming responses**: SSE real-time push; the model's `reasoning_content` is visible and timed separately from the body
+- ⚡ **Streaming responses**: SSE real-time push; `reasoning_content` is visible separately from the body, with first-token latency, memory search and compile time reported as separate metrics
 - 🎯 **Deterministic compilation**: how memories enter the context is rule-based, traceable and reproducible
 - 📍 **Query-wise teaching start**: requested depth stays separate from prior knowledge; concept feedback can adjust later explanations
 - 🔄 **Automatic learning**: stable preferences are extracted from feedback; in-scope updates keep an `archived + superseded_by` chain
-- 🔬 **Fair comparison**: a Fair Fork freezes the current session and the server creates two fixed, read-only On/Off branches
+- 🔬 **Fair comparison**: a Fair Fork freezes the current session's memory snapshot, creates two fixed On/Off branches with read-only memory, and generates both answers to the same question in parallel
 - 🔒 **Honest capabilities**: anything unimplemented is `false` in `/api/v1/meta`, and the UI never shows placeholder data
 
 ---
@@ -118,7 +118,7 @@ Minimal session state
 
 | Directory | Contents | Notes |
 |---|---|---|
-| `recoach-server/` | FastAPI + SQLite backend | Single source of truth for sessions, memories, events, metrics |
+| `recoach-server/` | FastAPI + SQLite backend | Single source of truth for sessions, memories, events and metrics in the web app |
 | `recoach-frontend/` | React web client | Conversation, thinking block, personalization evidence, Fair Fork comparison |
 | `re-coach-tui/` | Terminal TUI (Node ≥ 22.19) | Standalone app that implements the same business logic in-process with TypeScript |
 | `ai-coach-skill-repo/` | AI Coach skill | Behaviour layer for Hermes / Codex / Claude Desktop, with no code coupling to the three apps above |
@@ -133,9 +133,9 @@ Minimal session state
 
 **Backend**: FastAPI + SQLite (WAL + FTS5, falling back to LIKE) + SSE; Python 3.10 in the image and CI, 3.11 in the local venv
 
-**TUI**: TypeScript + `@earendil-works/pi-tui` + chalk, JSON file persistence
+**TUI**: TypeScript + `@earendil-works/pi-tui` / `pi-ai` + chalk, JSON file persistence
 
-**LLM**: `template` (default, no key) / `openai_compatible` / `deepseek` / `anthropic`
+**LLM**: `template` (default, no key) / `openai_compatible` / `deepseek` / `anthropic`; the TUI adds a `pi` login channel
 
 ---
 
@@ -170,7 +170,7 @@ cd recoach-frontend && npm test
 cd re-coach-tui && npm test
 ```
 
-> Test counts are deliberately omitted here — hardcoded numbers rot every time a test is added; the numbers in each subproject README come from real runs. All three subprojects have CI jobs ([.github/workflows/test.yml](.github/workflows/test.yml)): `backend` (pytest + cross-file consistency audit on Python 3.10), `frontend` (type checks + tests on Node 22), and `tui` (typecheck + build + vitest), plus `docker-build` to verify the images still build.
+> Test counts are deliberately omitted here — hardcoded numbers rot every time a test is added, and the subproject READMEs describe coverage rather than counts. All three subprojects have CI jobs ([.github/workflows/test.yml](.github/workflows/test.yml)): `backend` (pytest + cross-file consistency audit on Python 3.10), `frontend` (type checks + tests on Node 22), and `tui` (typecheck + build + vitest), plus `docker-build` to verify the images still build.
 
 ### Cross-file consistency audit
 

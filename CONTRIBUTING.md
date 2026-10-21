@@ -18,7 +18,7 @@
 - 添加docstrings
 
 ### TypeScript代码
-- 遵循项目ESLint配置
+- 遵循 `tsconfig` 的 `strict` 检查（项目当前没有 ESLint 配置）
 - 使用明确的类型定义
 - 避免使用`any`
 

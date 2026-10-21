@@ -85,7 +85,7 @@ docker compose ps
 docker compose logs -f
 ```
 
-（旧版独立安装的 Docker Compose 用连字符形式 `docker-compose`，参数相同。）
+（旧版独立安装的 `docker-compose` 不支持本文件使用的 `env_file.required` 等语法；请改用 Compose v2.24+。）
 
 ### 配置LLM提供商
 
@@ -132,7 +132,7 @@ curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 ```
 
-Docker Compose v2 随 Docker 一起安装；若仍使用旧版独立二进制：
+Docker Compose v2 随 Docker 一起安装；需要独立二进制时（版本同样需 >= 2.24）：
 
 ```bash
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
@@ -397,12 +397,12 @@ RECOACH_TOOL_BUDGET=1
 
 | 文件 | 谁读它 | 放什么 |
 |---|---|---|
-| `./.env`（仓库根） | `docker compose` 做变量替换 | 部署参数，如 `RECOACH_BACKEND_PORT` |
+| `./.env`（仓库根） | `docker compose` 做变量替换 | 部署参数，如 `RECOACH_BACKEND_PORT`；也是 `RECOACH_API_TOKEN` / `RECOACH_TRUSTED_HOSTS` 的插值来源 |
 | `./recoach-server/.env` | 应用自身（也被 compose 的 `env_file` 注入容器） | 模型、密钥、限流、鉴权等应用配置 |
 
 判断标准很简单：**"容器里跑的那个进程会读它吗？"** 会 → `recoach-server/.env`；只是给 compose 拼命令行用的 → 根目录 `.env`。
 
-把应用配置写进根 `.env` 不会生效；把端口写成 `recoach-server/.env` 也不会被 compose 读到。
+除 compose 用 `${...}` 插值的 `RECOACH_BACKEND_PORT`、`RECOACH_API_TOKEN`、`RECOACH_TRUSTED_HOSTS` 外，把应用配置写进根 `.env` 不会生效；把端口写成 `recoach-server/.env` 也不会被 compose 读到。
 
 ---
 

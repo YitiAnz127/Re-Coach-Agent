@@ -7,7 +7,7 @@
 ## 前置要求
 
 - Docker >= 20.10
-- Docker Compose >= 2.0（命令为 `docker compose`；旧版独立安装的 `docker-compose` 等价）
+- Docker Compose >= 2.24（命令为 `docker compose`；compose 文件用了 `env_file` 的 `required` 字段，旧版独立 `docker-compose` 不支持该语法）
 - (可选) Git
 
 ## 快速启动
@@ -116,7 +116,7 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-macOS / Linux 把前两条换成 `python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`，启动命令换成 `./.venv/bin/python -m uvicorn ...`。
+macOS / Linux 上 `uv` 命令相同，把 `Copy-Item` 换成 `cp`，启动命令换成 `./.venv/bin/python -m uvicorn ...`。
 
 > 这里装的是 `requirements.txt` 而不是 `requirements.lock.txt`：锁文件由 Linux 的 `pip freeze` 生成，不保留环境标记，其中的 `uvloop` 只支持 Linux/macOS，在 Windows 上会编译失败并中断整条安装。锁文件用于镜像构建。
 

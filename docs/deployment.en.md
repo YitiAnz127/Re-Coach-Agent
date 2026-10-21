@@ -85,7 +85,7 @@ docker compose ps
 docker compose logs -f
 ```
 
-(The legacy standalone Docker Compose uses the hyphenated `docker-compose` with identical arguments.)
+(The legacy standalone `docker-compose` does not support the `env_file.required` syntax used here; use Compose v2.24+.)
 
 ### Configure the LLM provider
 
@@ -132,7 +132,7 @@ curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 ```
 
-Docker Compose v2 ships with Docker; for the legacy standalone binary:
+Docker Compose v2 ships with Docker; for a standalone binary (also needs >= 2.24):
 
 ```bash
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
@@ -405,12 +405,12 @@ There are two `.env` files in the repository with **different responsibilities �
 
 | File | Who reads it | What goes in it |
 |---|---|---|
-| `./.env` (repository root) | `docker compose`, for variable substitution | Deployment parameters such as `RECOACH_BACKEND_PORT` |
+| `./.env` (repository root) | `docker compose`, for variable substitution | Deployment parameters such as `RECOACH_BACKEND_PORT`; also the interpolation source for `RECOACH_API_TOKEN` / `RECOACH_TRUSTED_HOSTS` |
 | `./recoach-server/.env` | The application itself (Compose also injects it into the container via `env_file`) | Model, keys, rate limits, auth — all application configuration |
 
 The test is simple: **"will the process running inside the container read it?"** Yes → `recoach-server/.env`; it is only used to build the Compose command line → root `.env`.
 
-Application configuration written to the root `.env` has no effect; a port written into `recoach-server/.env` is never seen by Compose.
+Apart from `RECOACH_BACKEND_PORT`, `RECOACH_API_TOKEN` and `RECOACH_TRUSTED_HOSTS` (which Compose interpolates with `${...}`), application configuration written to the root `.env` has no effect; a port written into `recoach-server/.env` is never seen by Compose.
 
 ---
 

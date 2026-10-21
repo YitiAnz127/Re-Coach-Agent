@@ -7,7 +7,7 @@ This guide helps you get the Re:Coach project running within 5 minutes.
 ## Prerequisites
 
 - Docker >= 20.10
-- Docker Compose >= 2.0 (invoked as `docker compose`; the standalone `docker-compose` binary is equivalent)
+- Docker Compose >= 2.24 (invoked as `docker compose`; the compose file uses `env_file` with `required`, which the legacy standalone `docker-compose` does not support)
 - (Optional) Git
 
 ## Quick Start
@@ -116,7 +116,7 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-On macOS / Linux replace the first two lines with `python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt` and start with `./.venv/bin/python -m uvicorn ...`.
+On macOS / Linux the `uv` commands are the same — replace `Copy-Item` with `cp` and start with `./.venv/bin/python -m uvicorn ...`.
 
 > This installs `requirements.txt`, not `requirements.lock.txt`: the lock file is produced by Linux `pip freeze` and drops environment markers, so its `uvloop` pin (Linux/macOS only) cannot compile on Windows and aborts the whole install. The lock file is for the image build.
 

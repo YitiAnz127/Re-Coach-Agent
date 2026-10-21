@@ -48,7 +48,7 @@
 - 只有形成 `ResolvedTask` 后才执行完整长期记忆检索。
 - 确定性 Context Compiler 去重、排序、覆盖和裁剪，不使用额外 Planner LLM；注入的记忆与历史对话以定界符包裹（`<untrusted_memory>`），并要求系统提示词声明其不可信语义。
 - 本轮目标深度与教学起点分开：明确自述优先，其次同概念反馈，再次同命题的显式状态；没有证据保持 `unknown`。概念反馈独立于长期表达偏好，关闭记忆时不提供；Fair Fork 不写入或读取新反馈。
-- 单次主 Coach 流式输出；外部模型首字前失败时回退到模板，保证链路可用（`RECOACH_LLM_FAIL_FAST=true` 时改为直接返回 `MODEL_UNAVAILABLE`）。
+- 主 Coach 单轮流式输出（截断时最多续写两次）；外部模型首字前失败时回退到模板，保证链路可用（`RECOACH_LLM_FAIL_FAST=true` 时改为直接返回 `MODEL_UNAVAILABLE`）。
 - SSE 事件共五种：`turn.started`、`assistant.delta`、`assistant.thinking`、`turn.completed`、`turn.error`；每条流恰好一个终止事件。
 - `assistant.thinking` 转发模型 `reasoning_content`，思考过程实时可见；正文首字延迟（TTFT）与思考 TTFT 分开记录。
 - canonical Turn 完成态落库成功后才发送 `turn.completed`。
@@ -289,4 +289,4 @@ pytest.ini                pytest 配置
 
 ---
 
-> **知返 Re: Coach 后端用最小状态理解会话，必要时补全问题；问题足够明确后，按作用域检索少量记忆。SQLite 负责本地真相和冲突治理，Context Compiler 确定性决定记忆如何进入上下文，主 Coach 一次调用完成讲解，最终由真实事件证明记忆是否有效。**
+> **知返 Re: Coach 后端用最小状态理解会话，必要时补全问题；问题足够明确后，按作用域检索少量记忆。SQLite 负责本地真相和冲突治理，Context Compiler 确定性决定记忆如何进入上下文，主 Coach 单轮流式输出完成讲解（截断时最多续写两次），最终由真实事件证明记忆是否有效。**

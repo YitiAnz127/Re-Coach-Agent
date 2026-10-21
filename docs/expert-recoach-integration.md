@@ -10,7 +10,7 @@
 
 ExPerT 把问题表示为“当前问题文本 + 输入过程的按键行为 → 推断该问题领域的熟练度 → 按熟练度生成回答”。其五级标签为 Novice、Beginner、Intermediate、Proficient、Expert；行为特征包括按键按下/抬起间隔、删除次数和输入速度，按词聚合后进入 few-shot 推断提示，再用熟练度条件控制细节、术语和概念复杂度（论文 §2.1–2.3，图 2–3）。它关注的是**同一个人跨领域、跨子问题会变化的即时熟练度**，而不是固定人设。
 
-知返面向机器学习/深度学习教学，当前链路是“澄清问题 → 形成 `ResolvedTask` → 检索作用域记忆和命题状态 → 编译教学上下文 → 单次主 Coach 输出”。`gate.py` 从措辞得到 `desired_depth` 和任务类型；`compiler.py` 把局部深度、已知前置、记忆及命题状态放进提示。长期记忆主要保存讲解偏好和交互规则；`Concept State` 记录带证据来源的命题状态，不是领域能力评分。相关实现见 [`gate.py`](../recoach-server/app/services/gate.py)、[`compiler.py`](../recoach-server/app/services/compiler.py)、[`brief.py`](../recoach-server/app/services/brief.py)、[`orchestrator.py`](../recoach-server/app/services/orchestrator.py)。
+知返面向机器学习/深度学习教学，当前链路是“澄清问题 → 形成 `ResolvedTask` → 检索作用域记忆和命题状态 → 编译教学上下文 → 主 Coach 流式输出”。`gate.py` 从措辞得到 `desired_depth` 和任务类型；`compiler.py` 把局部深度、已知前置、记忆及命题状态放进提示。长期记忆主要保存讲解偏好和交互规则；`Concept State` 记录带证据来源的命题状态，不是领域能力评分。相关实现见 [`gate.py`](../recoach-server/app/services/gate.py)、[`compiler.py`](../recoach-server/app/services/compiler.py)、[`brief.py`](../recoach-server/app/services/brief.py)、[`orchestrator.py`](../recoach-server/app/services/orchestrator.py)。
 
 ## 2. 相似点与关键差异
 
