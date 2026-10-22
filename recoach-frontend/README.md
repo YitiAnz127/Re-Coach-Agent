@@ -21,6 +21,7 @@
 ### 对话与展示
 
 - 首次发送自动创建 Session，后续 Turn 复用同一个 `sessionId`。
+- 对话中的输入框固定停靠在视口底部；流式回答只在页面位于底部时跟随，上翻阅读后暂停跟随，回到底部后继续。多行草稿向上扩展，并为最后一段内容预留空间。
 - 支持澄清轮、流式回答、Markdown 与 KaTeX 公式渲染（`react-markdown` + `remark-math` + `rehype-katex`）。
 - 公式使用 `$...$` 行内语法，或用独立行的 `$$` 包裹块级公式；过宽的块级公式在自身区域横向滚动。数学插件需与 Markdown 解析器兼容（当前为 `remark-math 6`、`rehype-katex 7`），并通过 npm override 保持 KaTeX 渲染器与 CSS 版本一致。
 - 思考过程以可折叠块实时展示（`assistant.thinking` 事件），正文出现后自动折叠，避免"静默等待"。
@@ -64,6 +65,8 @@
 - 实际消息组件的公式解析：上下标、分式、矩阵、多行等式、流式片段、代码隔离与 KaTeX 依赖一致性。
 
 此外已通过 TypeScript 检查和 Vite 生产构建；`npm run smoke` 提供前后端 HTTP 级联调。
+
+`node scripts/composer-stream-smoke.mjs` 使用本地模拟 SSE 与 Playwright 验证桌面、平板和手机上的输入框位置、上翻阅读、恢复跟随与多行草稿，不调用真实模型。需安装 Playwright 及 Chromium，或用 `RECOACH_PLAYWRIGHT_MODULE` 指向可用的 Playwright 模块。
 
 ## 3. 环境要求
 

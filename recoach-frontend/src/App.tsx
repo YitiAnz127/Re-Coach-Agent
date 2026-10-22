@@ -1,5 +1,5 @@
 import { Activity, MessageSquare, Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Composer } from "./components/Composer";
 import { Conversation } from "./components/Conversation";
 import { FairForkComparison } from "./components/FairForkComparison";
@@ -94,7 +94,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("chat");
   const [serviceMeta, setServiceMeta] = useState<ServiceMeta>();
   const abortRef = useRef<AbortController | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const learningRef = useRef<HTMLDivElement>(null);
+  const composerDockRef = useRef<HTMLDivElement>(null);
+  const followOutputRef = useRef(true);
+  const hasConversation = messages.length > 0;
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -117,9 +120,43 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (messages.length === 0) return;
-    endRef.current?.scrollIntoView({ behavior: busy ? "smooth" : "auto", block: "end" });
-  }, [busy, messages]);
+    if (viewMode !== "chat") return;
+    const onScroll = () => {
+      const remaining = document.documentElement.scrollHeight - window.innerHeight - window.scrollY;
+      followOutputRef.current = remaining <= 64;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [viewMode]);
+
+  useLayoutEffect(() => {
+    if (!hasConversation || viewMode !== "chat") return;
+    const column = learningRef.current;
+    const dock = composerDockRef.current;
+    if (!column || !dock) return;
+    const updateLayout = () => {
+      // Reserve the dock's actual height, including a multiline draft and safe-area padding.
+      const height = `${dock.getBoundingClientRect().height}px`;
+      if (column.style.getPropertyValue("--composer-height") !== height) {
+        column.style.setProperty("--composer-height", height);
+      }
+      if (followOutputRef.current) {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+      }
+    };
+    updateLayout();
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(dock);
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, [hasConversation, viewMode]);
+
+  useLayoutEffect(() => {
+    if (hasConversation && viewMode === "chat" && followOutputRef.current) {
+      // Each chunk commits directly; restarting a smooth animation makes the page lag and jump.
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+    }
+  }, [messages, hasConversation, viewMode]);
 
   // 会话 id 落 localStorage。刷新后不再丢失整段对话。
   useEffect(() => {
@@ -173,6 +210,7 @@ export default function App() {
 
     const controller = new AbortController();
     const startedAt = performance.now();
+    followOutputRef.current = true;
     abortRef.current = controller;
     setBusy(true);
     setPrompt("");
@@ -362,8 +400,6 @@ export default function App() {
   const switchToChat = useCallback(() => setViewMode("chat"), []);
   const switchToPerformance = useCallback(() => setViewMode("performance"), []);
 
-  const hasConversation = messages.length > 0;
-
   return (
     <div className={hasConversation ? "app has-conversation" : "app"}>
       <a className="skip-link" href="#main-content">
@@ -419,7 +455,7 @@ export default function App() {
         </div>
 
         {viewMode === "chat" ? (
-          <div className="learning-column">
+          <div className="learning-column" ref={learningRef}>
             {!hasConversation ? (
               <EmptyState />
             ) : (
@@ -431,13 +467,14 @@ export default function App() {
                 serviceMeta={serviceMeta}
               />
             )}
-            <Composer
-              value={prompt}
-              busy={busy}
-              onChange={setPrompt}
-              onSubmit={() => sendPrompt()}
-            />
-            <div ref={endRef} />
+            <div className="composer-dock" ref={composerDockRef}>
+              <Composer
+                value={prompt}
+                busy={busy}
+                onChange={setPrompt}
+                onSubmit={() => sendPrompt()}
+              />
+            </div>
           </div>
         ) : (
           <div className="performance-column">
