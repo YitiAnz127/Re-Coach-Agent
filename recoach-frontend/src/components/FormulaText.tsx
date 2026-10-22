@@ -7,29 +7,28 @@ import "katex/dist/katex.min.css";
 /**
  * 消息正文渲染：Markdown + LaTeX 公式（$...$ 行内、$$...$$ 块级）。
  *
- * - remark-math 天然容错：流式过程中未闭合的 $... 会按纯文本显示，
- *   闭合后自动变成公式，不会打断流式输出。
- * - react-markdown 默认不渲染原始 HTML（无 rehype-raw），KaTeX 输出
- *   由库内部转义，不存在 XSS 注入面。
- * - 代码块用 <pre><code> 结构，方便 CSS 定制。
+ * 流式文本每次按当前内容重新解析；未完成或无效公式不会中断消息。
+ * 保持默认 HTML 过滤与 KaTeX trust=false，代码块不参与数学解析。
+ * 独立容器隔离正文的 pre-wrap；宽公式在自身区域横向滚动。
  */
 
 export function FormulaText({ content }: { content: string }) {
   const rendered = useMemo(
     () => (
-      <ReactMarkdown
-        remarkPlugins={[remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={{
-          // 代码块带语言类名，便于样式；公式块用 div 包裹以支持换行
-          pre: ({ children }) => <pre className="md-pre">{children}</pre>,
-          code: ({ className, children }) => (
-            <code className={className}>{children}</code>
-          ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+      <div className="formula-text">
+        <ReactMarkdown
+          remarkPlugins={[remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+          components={{
+            pre: ({ children }) => <pre className="md-pre">{children}</pre>,
+            code: ({ className, children }) => (
+              <code className={className}>{children}</code>
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
     ),
     [content],
   );

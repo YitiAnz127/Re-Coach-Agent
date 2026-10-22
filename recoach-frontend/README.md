@@ -22,6 +22,7 @@
 
 - 首次发送自动创建 Session，后续 Turn 复用同一个 `sessionId`。
 - 支持澄清轮、流式回答、Markdown 与 KaTeX 公式渲染（`react-markdown` + `remark-math` + `rehype-katex`）。
+- 公式使用 `$...$` 行内语法，或用独立行的 `$$` 包裹块级公式；过宽的块级公式在自身区域横向滚动。数学插件需与 Markdown 解析器兼容（当前为 `remark-math 6`、`rehype-katex 7`），并通过 npm override 保持 KaTeX 渲染器与 CSS 版本一致。
 - 思考过程以可折叠块实时展示（`assistant.thinking` 事件），正文出现后自动折叠，避免"静默等待"。
 - 个性化依据（personalization）、执行摘要、性能指标和建议动作随回答展示。
 - 概念讲解后可点“太基础 / 正合适 / 跳得太快”，服务器按原回答的教学起点记录反馈；同一按钮可改评，仅调整该概念后续讲解。后端关闭记忆或未声明能力时隐藏入口。
@@ -60,6 +61,7 @@
 - 不可重试错误拦截；
 - 后端 LLM meta 的运行时校验、Fair Fork 与概念反馈能力声明的解析、provider 展示名称格式化；
 - 本轮降级提示（fallback notice）的生成条件。
+- 实际消息组件的公式解析：上下标、分式、矩阵、多行等式、流式片段、代码隔离与 KaTeX 依赖一致性。
 
 此外已通过 TypeScript 检查和 Vite 生产构建；`npm run smoke` 提供前后端 HTTP 级联调。
 

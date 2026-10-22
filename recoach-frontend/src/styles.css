@@ -140,6 +140,13 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, summary:focu
 .assistant-copy code:not(pre code) { padding: 2px 5px; border-radius: 5px; background: rgba(18,18,22,.065); font: .88em "SFMono-Regular", Consolas, monospace; }
 .focus-label { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-copy { max-width: 760px; white-space: pre-wrap; font-size: 16px; line-height: 1.78; letter-spacing: -.006em; }
+.formula-text { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.formula-text > :first-child { margin-top: 0; }
+.formula-text > :last-child { margin-bottom: 0; }
+.formula-text pre { white-space: pre; overflow-wrap: normal; }
+.formula-text .katex { white-space: nowrap; overflow-wrap: normal; letter-spacing: normal; }
+.formula-text .katex-display { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-block: .25em; }
+.formula-text .katex-display > .katex { display: block; width: max-content; min-width: 100%; }
 .thinking-line { display: flex; align-items: center; gap: var(--s3); color: var(--muted); font-size: 14px; }
 .thinking-line span { width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, #F1837A, #E9687A); animation: breathe 1.2s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: .28; transform: scale(.76); } }
