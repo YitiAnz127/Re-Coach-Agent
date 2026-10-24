@@ -6,6 +6,7 @@
 *.key
 *.p12
 secrets/
+test_api_key.txt
 
 # ---- 数据库：含用户对话与记忆，属于个人数据 ----
 data/
