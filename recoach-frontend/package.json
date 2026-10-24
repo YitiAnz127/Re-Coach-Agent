@@ -33,6 +33,6 @@
     "rehype-stringify": "^10.0.1",
     "remark-rehype": "^11.1.2",
     "typescript": "^5.9.2",
-    "vite": "8.2.2"
+    "vite": "^8.3.5"
   }
 }
